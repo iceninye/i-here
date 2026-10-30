@@ -1,0 +1,133 @@
+/**
+ * 定位核心 —— 由 mtr-app (v52.x) 嘅 acquireBestPosition / handleGeoFix 移植並改良：
+ *  1. 取樣窗：watchPosition 收集多個 fix，保留精度最好嗰個（第一個 fix 通常係粗略 Wi-Fi / 基站估算）。
+ *  2. 提早完成：精度 <= GOOD_ACCURACY_M 即刻停。
+ *  3. 合法性關卡：座標要有限數值、喺香港範圍內。
+ *  4. 新增：每個更好嘅 fix 都即時回報 (onFix)，地圖可以先出點、慢慢收窄，唔使等成個取樣窗。
+ *  5. 改動：精度差（> POOR_ACCURACY_M）唔再拒絕 —— 對迷路長者嚟講「大概位置」好過「冇位置」，
+ *     改為顯示警告並提示走去空曠地方。
+ */
+
+export interface Fix {
+  lat: number;
+  lng: number;
+  /** 米，95% 信心半徑（瀏覽器定義） */
+  accuracy: number;
+  timestamp: number;
+}
+
+export type GeoErrorCode = 'denied' | 'unavailable' | 'timeout' | 'unsupported' | 'outside-hk';
+
+export class GeoError extends Error {
+  constructor(public code: GeoErrorCode, message?: string) {
+    super(message ?? code);
+  }
+}
+
+export const GEO = {
+  /** 收集 fix 嘅時間窗 */
+  SAMPLE_WINDOW_MS: 8000,
+  /** 好到可以提早停 */
+  GOOD_ACCURACY_M: 30,
+  /** 超過就顯示「定位不準確」警告（但仍然顯示） */
+  POOR_ACCURACY_M: 150,
+  /** 冷啟動可以用幾秒內嘅快取 fix，令地圖即刻有點 */
+  INITIAL_MAX_AGE_MS: 5000,
+  TIMEOUT_MS: 10000,
+} as const;
+
+export function isInHongKong(lat: number, lng: number): boolean {
+  // 香港 + 鄰近水域嘅範圍（比 mtr-app 嘅 20–24 / 113–115 收窄；北邊同深圳交界一帶無可避免重疊，
+  // 嗰度 identify API 自然搵唔到大廈，UI 會退回只顯示座標）
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= 22.13 && lat <= 22.58 && lng >= 113.82 && lng <= 114.45;
+}
+
+export function toFix(pos: GeolocationPosition): Fix | null {
+  const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
+  return { lat, lng, accuracy: Number.isFinite(accuracy) ? accuracy : Infinity, timestamp: pos.timestamp };
+}
+
+export function geoErrorFrom(err: GeolocationPositionError | { code: number; message?: string }): GeoError {
+  if (err.code === 1) return new GeoError('denied', err.message);
+  if (err.code === 3) return new GeoError('timeout', err.message);
+  return new GeoError('unavailable', err.message);
+}
+
+export interface AcquireOptions {
+  maxAgeMs?: number;
+  windowMs?: number;
+  goodAccuracyM?: number;
+  /** 每當有更準嘅 fix 就 call（包括第一個） */
+  onFix?: (fix: Fix) => void;
+  signal?: AbortSignal;
+  geolocation?: Geolocation;
+}
+
+/**
+ * 喺取樣窗內收集 fix，resolve 最準嗰個。位置只喺本機處理；watch 一定會被清除。
+ * Reject GeoError（冇任何 fix 時）；signal abort 時 resolve 目前最好嘅 fix 或 reject 'timeout'。
+ */
+export function acquireBestFix(opts: AcquireOptions = {}): Promise<Fix> {
+  const geo = opts.geolocation ?? (typeof navigator !== 'undefined' ? navigator.geolocation : undefined);
+  const windowMs = opts.windowMs ?? GEO.SAMPLE_WINDOW_MS;
+  const good = opts.goodAccuracyM ?? GEO.GOOD_ACCURACY_M;
+
+  return new Promise<Fix>((resolve, reject) => {
+    if (!geo) return reject(new GeoError('unsupported'));
+    let best: Fix | null = null;
+    let done = false;
+    let watchId: number | null = null;
+
+    const finish = (err?: GeoError) => {
+      if (done) return;
+      done = true;
+      if (watchId !== null) geo.clearWatch(watchId);
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onAbort);
+      if (best) resolve(best);
+      else reject(err ?? new GeoError('timeout'));
+    };
+    const onAbort = () => finish(new GeoError('timeout', 'aborted'));
+
+    watchId = geo.watchPosition(
+      pos => {
+        const fix = toFix(pos);
+        if (!fix) return;
+        if (!best || fix.accuracy < best.accuracy) {
+          best = fix;
+          opts.onFix?.(fix);
+        }
+        if (fix.accuracy <= good) finish();
+      },
+      // 已經有 fix 就繼續等；冇 fix 先當失敗
+      err => { if (!best || err.code === 1) finish(geoErrorFrom(err)); },
+      { enableHighAccuracy: true, timeout: GEO.TIMEOUT_MS, maximumAge: opts.maxAgeMs ?? 0 },
+    );
+    const timer = setTimeout(() => finish(), windowMs);
+    opts.signal?.addEventListener('abort', onAbort);
+  });
+}
+
+/** 兩點距離（米） */
+export function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371008.8;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/** 精度圈 polygon（GeoJSON [lng, lat]） */
+export function circlePolygon(lat: number, lng: number, radiusM: number, steps = 64): [number, number][] {
+  const coords: [number, number][] = [];
+  const dLat = radiusM / 111320;
+  const dLng = radiusM / (111320 * Math.cos((lat * Math.PI) / 180));
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * 2 * Math.PI;
+    coords.push([lng + dLng * Math.cos(t), lat + dLat * Math.sin(t)]);
+  }
+  return coords;
+}
