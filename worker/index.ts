@@ -13,6 +13,7 @@
 
 const ALLOWED_HOSTS = new Set([
   'www.geodetic.landsd.gov.hk',
+  'www.map.gov.hk',
   'geodata.gov.hk',
   'www.als.gov.hk',
 ]);

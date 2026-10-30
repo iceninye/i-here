@@ -63,7 +63,7 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
       const p80 = await wgs84ToHK80(f.lat, f.lng, ctrl.signal);
       if (ctrl.signal.aborted) return;
       setHk80(p80);
-      const resolved = await reverseGeocode(p80, ctrl.signal);
+      const resolved = await reverseGeocode(p80, { lat: f.lat, lng: f.lng }, ctrl.signal);
       if (ctrl.signal.aborted) return;
       setPlace(resolved);
       setPlaceStatus(resolved ? 'ready' : 'not-found');

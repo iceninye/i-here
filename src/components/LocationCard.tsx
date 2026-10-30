@@ -67,6 +67,7 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
               附近還有：{place.landmarks.map(l => `${l.name}（${Math.round(l.distanceM)} 米）`).join('、')}
             </p>
           )}
+          {place?.source === 'osm' && <p className="card__source">地址資料來源：OpenStreetMap</p>}
           {(placeStatus === 'failed' || placeStatus === 'not-found') && !place && (
             <p className="card__sub">未能查到地址，但你仍然可以分享位置給家人。</p>
           )}

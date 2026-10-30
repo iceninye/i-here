@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DebugPanel } from './components/DebugPanel';
 import { LocationCard } from './components/LocationCard';
 import { MapView } from './components/MapView';
 import { ShareButton } from './components/ShareButton';
@@ -11,9 +12,10 @@ export default function App() {
   const [viewingShared, setViewingShared] = useState(!!shared);
   const loc = useCurrentLocation({ enabled: !viewingShared });
   const [is3D, setIs3D] = useState(false);
+  const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), []);
 
   const backToMe = () => {
-    history.replaceState(null, '', location.pathname);
+    history.replaceState(null, '', location.pathname + (debug ? '?debug=1' : ''));
     setViewingShared(false);
   };
 
@@ -33,6 +35,7 @@ export default function App() {
         ) : (
           <LocationCard loc={loc} />
         )}
+        {debug && <DebugPanel loc={loc} />}
       </header>
 
       <footer className="bottom">
