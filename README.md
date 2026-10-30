@@ -35,7 +35,9 @@ GPS (WGS84)
   ▼
 坐標轉換 API  wgsgeog → hkgrid   （3 秒 timeout；失敗用本機 proj4 EPSG:2326，誤差 ~1 m）
   ▼
-identify API（HK80 x/y）→ 附近建築物 / 設施 / 地標，按平面距離排序
+identify API（www.map.gov.hk；失敗試 geodata.gov.hk 鏡像）  ┐ 並行
+searchNearby API（1 km 內設施）                              ┘ → 揀最近嘅地方名
+  ▼   （政府 API 全部攞唔到地名 → OpenStreetMap Nominatim 後備）
   ▼
 ALS 門牌地址搜尋（用最近建築物名查）→ 揀 250 m 內最近嗰個 → 官方中文地址
   ▼
@@ -89,7 +91,7 @@ Google 地圖：https://www.google.com/maps/search/?api=1&query=22.408010,113.97
 | API | 瀏覽器直接 call | 備註 |
 |---|---|---|
 | 地圖瓦片 `mapapi.geodata.gov.hk` | ✅ 一般得 | `<img>`/WebGL 載入，地政總署瓦片有 CORS header |
-| identify / locationSearch `geodata.gov.hk` | ⚠️ 視乎時期 | 有報告話會間歇冇 CORS header |
+| identify `www.map.gov.hk` / searchNearby `geodata.gov.hk` | ⚠️ 未實測 | 失敗會自動試鏡像，再退 OpenStreetMap |
 | ALS `www.als.gov.hk` | ⚠️ | 要加 `Accept: application/json`，否則回 XML |
 | 坐標轉換 `geodetic.landsd.gov.hk` | ⚠️ | 失敗時 App 自動用本機 proj4，唔影響功能 |
 
@@ -143,7 +145,8 @@ worker/                         可選 CORS 代理（Cloudflare Worker）
 
 ## ⚠️ 已知限制 / 待驗證
 
-- 開發環境網絡封鎖咗 `*.gov.hk`，**identify / ALS / 坐標轉換 API 嘅回應格式係按官方文件寫、用寬鬆解析器處理**（遞迴搵「有名＋有 HK80 座標」嘅 object），已用 mock 回應做單元同瀏覽器測試，但未對真實 API 實測。第一次部署後請用手機試一次；如果地名唔出，打開 DevTools → Network 睇 identify 回應，再調整 `src/lib/reverseGeocode.ts` 嘅 `NAME_KEYS`。
+- 開發環境網絡封鎖咗 `*.gov.hk`，**identify / searchNearby / ALS / 坐標轉換 API 嘅回應格式未對真實 API 實測**（官方文件冇公開 response schema）。解析器好寬鬆：遞迴搵任何「似地方名」嘅欄位（中文優先），有座標就計距離。
+- **排查方法**：網址加 `?debug=1`（例如 `https://iceninye.github.io/i-here/?debug=1`），位置卡下面會出「診斷資料」，顯示每個 API 嘅狀態（`TypeError` 多數係 CORS）同回應頭 600 字，可以一鍵複製。
 - 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片），香港覆蓋率高但唔係官方。地政總署「3D 建築物外廓」係下載檔（非瓦片 API），之後可以預先轉成 PMTiles 放 repo 取代。
 - 地政總署 3D Tiles 嘅高度係真實海拔，MapLibre 冇開地形時山上嘅建築物會「浮起」；屬可選功能。
 - 北區同深圳交界一帶，經緯度範圍檢查無可避免會重疊；嗰度 identify 搵唔到大廈就只顯示座標。

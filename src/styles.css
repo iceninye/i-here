@@ -138,3 +138,13 @@ button:focus-visible, a:focus-visible { outline: 4px solid #ffbf00; outline-offs
   .top, .bottom { left: 50%; right: auto; width: 560px; transform: translateX(-50%); }
   .bottom { border-radius: var(--radius) var(--radius) 0 0; }
 }
+
+/* ---- ?debug=1 診斷面板 ---- */
+.debug {
+  pointer-events: auto; margin-top: 8px; background: #111418; color: #e6edf3; border-radius: 14px;
+  padding: 8px 12px; font-size: 0.8rem; max-height: 35dvh; overflow-y: auto;
+}
+.debug summary { font-weight: 700; min-height: 32px; cursor: pointer; }
+.debug__copy { margin: 6px 0; padding: 6px 12px; border-radius: 8px; border: 1px solid #5c6773; background: #222a33; color: inherit; font: inherit; }
+.debug__log { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; }
+.card__source { font-size: 0.85rem; margin-top: 6px !important; color: var(--ink-2); }
