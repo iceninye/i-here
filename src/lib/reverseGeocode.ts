@@ -204,75 +204,99 @@ const assumeAtPoint = (c: PlaceCandidate): PlaceCandidate =>
 
 async function tryExtract(url: string, name: string, origin: Origin, signal?: AbortSignal): Promise<PlaceCandidate[]> {
   try {
-    return extractCandidates(await fetchJson(apiUrl(url), { signal, timeoutMs: 6000, name }), origin);
+    return extractCandidates(await fetchJson(apiUrl(url), { signal, timeoutMs: SOURCE_TIMEOUT_MS, name }), origin);
   } catch (e) {
     if (signal?.aborted) throw e;
     return [];
   }
 }
 
+async function tryOsm(origin: Origin, signal?: AbortSignal): Promise<PlaceCandidate | null> {
+  try {
+    const url = `${ENDPOINTS.nominatim}?format=jsonv2&lat=${origin.lat.toFixed(6)}&lon=${origin.lng.toFixed(6)}` +
+      '&zoom=18&addressdetails=1&accept-language=zh-HK,zh-Hant,zh';
+    const osm = parseNominatim(await fetchJson(url, { signal, timeoutMs: SOURCE_TIMEOUT_MS, name: 'OpenStreetMap' }), origin);
+    return osm && !Number.isFinite(osm.distanceM) ? { ...osm, distanceM: 0 } : osm;
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return null;
+  }
+}
+
+function toPlace(c: PlaceCandidate, source: PlaceSource, landmarks: PlaceCandidate[]): ResolvedPlace {
+  return {
+    name: c.name,
+    proximity: c.distanceM <= AT_THRESHOLD_M ? 'at' : 'near',
+    distanceM: c.distanceM,
+    address: c.address,
+    landmarks,
+    source,
+  };
+}
+
+/** 每個來源最多等幾耐。全部並行，所以最差情況係呢個時間 + ALS，而唔係逐個加埋。 */
+const SOURCE_TIMEOUT_MS = 5000;
+
 /**
  * HK80 → 地方名 + 地址：
- *  1. identify（www.map.gov.hk；失敗再試 geodata.gov.hk 鏡像）+ searchNearby 並行
- *  2. 揀最近嘅地方；有建築物名就用 ALS 補官方門牌地址
- *  3. 政府 API 全部攞唔到地名 → OpenStreetMap Nominatim 後備，畫面唔會只得「未能查到地址」
+ *  1. identify（www.map.gov.hk 同 geodata.gov.hk 鏡像）、searchNearby、OpenStreetMap **全部並行**
+ *     （實測政府 API 喺手機上可以好慢，逐個試要 20 秒以上）
+ *  2. 揀地名：identify > 最近嘅 searchNearby 設施 > OpenStreetMap
+ *  3. onPartial：OSM 一到先回報一次（暫時），政府 API 答完再回報揀好嘅地名，畫面即刻有字
+ *  4. 有地名就用 ALS 補官方門牌地址，回傳完整結果
  */
-export async function reverseGeocode(p: HK80Point, at: { lat: number; lng: number }, signal?: AbortSignal): Promise<ResolvedPlace | null> {
+export async function reverseGeocode(
+  p: HK80Point,
+  at: { lat: number; lng: number },
+  signal?: AbortSignal,
+  onPartial?: (place: ResolvedPlace) => void,
+): Promise<ResolvedPlace | null> {
   const origin: Origin = { x: p.x, y: p.y, lat: at.lat, lng: at.lng };
   const qs = `x=${Math.round(p.x)}&y=${Math.round(p.y)}&lang=zh`;
 
-  const identifyP = tryExtract(`${ENDPOINTS.identify}?${qs}`, 'identify', origin, signal).then(async c =>
-    c.length ? c : tryExtract(`${ENDPOINTS.identifyAlt}?${qs}`, 'identify (geodata)', origin, signal),
-  );
-  const nearbyP = tryExtract(`${ENDPOINTS.searchNearby}?${qs}`, 'searchNearby', origin, signal);
-  const [identified, nearby] = await Promise.all([identifyP, nearbyP]);
+  let govDone = false;
+  const osmP = tryOsm(origin, signal).then(osm => {
+    // OSM 通常最快（實測 ~0.3 s）；政府 API 未答就先顯示 OSM 結果，之後再換成官方地名
+    if (osm && !govDone) onPartial?.(toPlace(osm, 'osm', []));
+    return osm;
+  });
+  const [main, mirror, nearby] = await Promise.all([
+    tryExtract(`${ENDPOINTS.identify}?${qs}`, 'identify', origin, signal),
+    tryExtract(`${ENDPOINTS.identifyAlt}?${qs}`, 'identify (geodata)', origin, signal),
+    tryExtract(`${ENDPOINTS.searchNearby}?${qs}`, 'searchNearby', origin, signal),
+  ]);
+  govDone = true;
+  const osm = await osmP;
+  const identified = main.length ? main : mirror;
 
   let source: PlaceSource = 'identify';
-  let top = identified.map(assumeAtPoint)[0];
+  let top: PlaceCandidate | undefined = identified.map(assumeAtPoint)[0];
   const nearbySorted = nearby.filter(c => Number.isFinite(c.distanceM));
   // identify 個點冇嘢（例如企喺馬路 / 公園）→ 用最近嘅附近設施
   if (!top || (nearbySorted[0] && top.distanceM > nearbySorted[0].distanceM + 30)) {
     if (nearbySorted[0]) { top = nearbySorted[0]; source = 'nearby'; }
   }
-
-  if (!top) {
-    try {
-      const osm = parseNominatim(
-        await fetchJson(
-          `${ENDPOINTS.nominatim}?format=jsonv2&lat=${at.lat.toFixed(6)}&lon=${at.lng.toFixed(6)}&zoom=18&addressdetails=1&accept-language=zh-HK,zh-Hant,zh`,
-          { signal, timeoutMs: 5000, name: 'OpenStreetMap' },
-        ),
-        origin,
-      );
-      if (osm) { top = Number.isFinite(osm.distanceM) ? osm : { ...osm, distanceM: 0 }; source = 'osm'; }
-    } catch (e) {
-      if (signal?.aborted) throw e;
-    }
-  }
+  if (!top && osm) { top = osm; source = 'osm'; }
   if (!top) return null;
-
-  let address = top.address;
-  try {
-    const q = encodeURIComponent(top.address ? `${top.name} ${top.address}` : top.name);
-    const als = await fetchJson(apiUrl(`${ENDPOINTS.als}?q=${q}&n=5`), { signal, timeoutMs: 4000, name: 'ALS' });
-    address = pickAlsAddress(als, p) ?? address;
-  } catch (e) {
-    if (signal?.aborted) throw e;
-    // ALS 失敗唔緊要，用來源本身嘅地址
-  }
+  const chosen = top;
 
   const landmarks = [...identified, ...nearbySorted]
-    .filter(c => c.name !== top.name && Number.isFinite(c.distanceM) && c.distanceM <= 300)
+    .filter(c => c.name !== chosen.name && Number.isFinite(c.distanceM) && c.distanceM <= 300)
     .sort((a, b) => a.distanceM - b.distanceM)
     .filter((c, i, arr) => arr.findIndex(o => o.name === c.name) === i)
     .slice(0, 3);
 
-  return {
-    name: top.name,
-    proximity: top.distanceM <= AT_THRESHOLD_M ? 'at' : 'near',
-    distanceM: top.distanceM,
-    address,
-    landmarks,
-    source,
-  };
+  const base = toPlace(chosen, source, landmarks);
+  onPartial?.(base);
+
+  try {
+    const q = encodeURIComponent(chosen.address ? `${chosen.name} ${chosen.address}` : chosen.name);
+    const als = await fetchJson(apiUrl(`${ENDPOINTS.als}?q=${q}&n=5`), { signal, timeoutMs: 4000, name: 'ALS' });
+    const address = pickAlsAddress(als, p);
+    if (address) return { ...base, address };
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    // ALS 失敗唔緊要，用來源本身嘅地址
+  }
+  return base;
 }

@@ -10,7 +10,7 @@ export function DebugPanel({ loc }: { loc: CurrentLocation }) {
     `hk80: ${loc.hk80 ? `${loc.hk80.x.toFixed(1)}, ${loc.hk80.y.toFixed(1)} (${loc.hk80.source})` : '-'}`,
     `place: ${loc.placeStatus}${loc.place ? ` · ${loc.place.name} · ${loc.place.source}` : ''}`,
     '',
-    ...log.map(e => `[${e.ok ? 'OK' : 'FAIL'}] ${e.name} · ${e.status} · ${e.ms}ms\n${e.url}\n${e.snippet}\n`),
+    ...log.map(e => `[${e.status === 'pending' ? '…' : e.ok ? 'OK' : 'FAIL'}] ${e.name} · ${e.status} · ${e.ms}ms\n${e.url}\n${e.snippet}\n`),
   ].join('\n');
 
   return (
