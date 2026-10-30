@@ -1,0 +1,11 @@
+{
+  // Cloudflare Workers Builds：build 完將 dist/ 當靜態資源上載（冇 Worker script），做法同 mtr-app 一樣。
+  // 可選 CORS 代理係另一個 Worker，見 worker/wrangler.jsonc。
+  "name": "i-here",
+  "compatibility_date": "2025-09-01",
+  "build": { "command": "npm run build" },
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

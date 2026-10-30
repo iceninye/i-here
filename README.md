@@ -109,6 +109,7 @@ Google 地圖：https://www.google.com/maps/search/?api=1&query=22.408010,113.97
 ### 部署
 
 - **GitHub Pages**：push 去 `main` 自動 build + 部署（`.github/workflows/deploy.yml`）。第一次要喺 repo **Settings → Pages → Source** 揀 **GitHub Actions**。
+- **Cloudflare Workers Builds**：根目錄 `wrangler.jsonc` 會先跑 `npm run build`，再將 `dist/` 當靜態資源部署（同 mtr-app 一樣冇 Worker script）。
 - 可選 Actions variables：`VITE_API_PROXY`、`VITE_LANDSD_3DTILES_URL`（見 `.env.example`）。
 - PR 會自動跑測試同 build（`.github/workflows/ci.yml`）。
 
@@ -136,6 +137,7 @@ src/
   components/LocationCard.tsx   大字位置卡
   components/MapView.tsx        MapLibre 地圖、精度圈、2D / 3D
   components/landsd3dTiles.ts   地政總署 3D Tiles（lazy）
+wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
 worker/                         可選 CORS 代理（Cloudflare Worker）
 ```
 
