@@ -17,8 +17,9 @@ export async function fetchJson<T = unknown>(
   const onAbort = () => ctrl.abort(signal?.reason);
   signal?.addEventListener('abort', onAbort);
   const t0 = performance.now();
+  const update = logApi({ name, url, ok: false, status: 'pending', ms: 0, snippet: '' });
   const log = (ok: boolean, status: string, snippet: string) =>
-    logApi({ name, url, ok, status, ms: Math.round(performance.now() - t0), snippet: snippet.slice(0, 600) });
+    update({ ok, status, ms: Math.round(performance.now() - t0), snippet: snippet.slice(0, 600) });
   try {
     const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json', ...headers } });
     const text = await res.text();

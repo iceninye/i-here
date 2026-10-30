@@ -33,13 +33,14 @@ GPS (WGS84)
   │ ① 取樣窗：watchPosition 8 秒內收集多個 fix，保留最準；≤30 m 即刻停（移植自 mtr-app）
   │    每個更準嘅 fix 即時更新地圖（唔使等成個取樣窗）
   ▼
-坐標轉換 API  wgsgeog → hkgrid   （3 秒 timeout；失敗用本機 proj4 EPSG:2326，誤差 ~1 m）
+HK80：本機 proj4（EPSG:2326，誤差 ~1 m）即刻計；地政總署坐標轉換 API 喺背景核對
+  │   （實測手機上呢個 API 可以 3 秒都未回應，所以唔等佢）
   ▼
-identify API（www.map.gov.hk；失敗試 geodata.gov.hk 鏡像）  ┐ 並行
-searchNearby API（1 km 內設施）                              ┘ → 揀最近嘅地方名
-  ▼   （政府 API 全部攞唔到地名 → OpenStreetMap Nominatim 後備）
+identify（www.map.gov.hk + geodata.gov.hk 鏡像）┐
+searchNearby（1 km 內設施）                      ├ 全部並行，每個最多 5 秒
+OpenStreetMap Nominatim                          ┘ OSM 一到（~0.3 s）先顯示，政府 API 答咗再換官方地名
   ▼
-ALS 門牌地址搜尋（用最近建築物名查）→ 揀 250 m 內最近嗰個 → 官方中文地址
+ALS 門牌地址搜尋（用地名查）→ 揀 250 m 內最近嗰個 → 補官方中文地址（地名已經先顯示咗）
   ▼
 「你現在位於：興輝樓附近」＋ 地址 ＋ 附近還有：大興街市（95 米）…
 ```

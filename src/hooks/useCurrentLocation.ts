@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GEO, GeoError, acquireBestFix, geoErrorFrom, haversineM, isInHongKong, toFix, type Fix } from '../lib/geo';
-import { wgs84ToHK80, type HK80Point } from '../lib/hk80';
+import { wgs84ToHK80Api, wgs84ToHK80Local, type HK80Point } from '../lib/hk80';
 import { reverseGeocode, type ResolvedPlace } from '../lib/reverseGeocode';
 
 export type LocationStatus = 'locating' | 'ready' | 'error';
@@ -30,8 +30,8 @@ const TRACK_MOVE_M = 8;
 /**
  * 打開即定位：
  *   1. 取樣窗（mtr-app 技術）搵最準嘅 fix，期間逐步更新地圖
- *   2. WGS84 -> HK80（地政總署坐標轉換 API，失敗用本機 proj4）
- *   3. HK80 -> 附近建築物 / 地標（identify API）-> 官方門牌地址（ALS）
+ *   2. WGS84 -> HK80（本機 proj4 即刻計；地政總署坐標轉換 API 喺背景核對）
+ *   3. HK80 -> 附近建築物 / 地標（identify + searchNearby + OSM 並行）-> 先顯示地名 -> ALS 補官方門牌地址
  *   4. 之後保持低頻追蹤：行開咗先再查地址；App 去咗背景就暫停 GPS 慳電
  */
 export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {}): CurrentLocation {
@@ -59,11 +59,19 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
     const ctrl = new AbortController();
     resolveCtrl.current = ctrl;
     setPlaceStatus('loading');
+    // 本機 HK80 即刻有；官方 API 喺背景核對（成功先更新顯示，唔會阻住查地址）
+    const p80 = wgs84ToHK80Local(f.lat, f.lng);
+    setHk80(p80);
+    void wgs84ToHK80Api(f.lat, f.lng, ctrl.signal).then(api => {
+      if (api && !ctrl.signal.aborted) setHk80(api);
+    });
     try {
-      const p80 = await wgs84ToHK80(f.lat, f.lng, ctrl.signal);
-      if (ctrl.signal.aborted) return;
-      setHk80(p80);
-      const resolved = await reverseGeocode(p80, { lat: f.lat, lng: f.lng }, ctrl.signal);
+      const resolved = await reverseGeocode(p80, { lat: f.lat, lng: f.lng }, ctrl.signal, partial => {
+        // 地名一到就顯示；ALS 補全地址之後再更新
+        if (ctrl.signal.aborted) return;
+        setPlace(partial);
+        setPlaceStatus('ready');
+      });
       if (ctrl.signal.aborted) return;
       setPlace(resolved);
       setPlaceStatus(resolved ? 'ready' : 'not-found');

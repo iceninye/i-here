@@ -37,16 +37,17 @@ export function parseTransformResponse(json: unknown): { x: number; y: number } 
 }
 
 /**
- * WGS84 -> HK80：優先用地政總署坐標轉換 API（官方、測量級），
- * 失敗（CORS / 逾時 / 格式唔啱）就用本機 proj4，保證流程唔會斷。
+ * 地政總署坐標轉換 API（官方、測量級）。回傳 null 代表失敗（CORS / 逾時 / 格式唔啱）。
+ *
+ * 實測（手機）呢個 API 可以 3 秒都未回應，所以查地址唔會等佢：
+ * 先用本機 proj4（誤差 ~1 m，對搵附近大廈冇分別）即刻開始查，呢個 call 喺背景跑，成功先更新顯示。
  */
-export async function wgs84ToHK80(lat: number, lng: number, signal?: AbortSignal): Promise<HK80Point> {
+export async function wgs84ToHK80Api(lat: number, lng: number, signal?: AbortSignal): Promise<HK80Point | null> {
   const url = `${ENDPOINTS.transform}?inSys=wgsgeog&outSys=hkgrid&lat=${lat.toFixed(7)}&long=${lng.toFixed(7)}`;
   try {
-    const p = parseTransformResponse(await fetchJson(apiUrl(url), { timeoutMs: 3000, signal }));
-    if (p) return { ...p, source: 'landsd-api' };
-  } catch (e) {
-    if (signal?.aborted) throw e;
+    const p = parseTransformResponse(await fetchJson(apiUrl(url), { timeoutMs: 5000, signal, name: '坐標轉換' }));
+    return p ? { ...p, source: 'landsd-api' } : null;
+  } catch {
+    return null;
   }
-  return wgs84ToHK80Local(lat, lng);
 }

@@ -112,6 +112,51 @@ describe('reverseGeocode', () => {
     expect([o?.name, o?.source, o?.address]).toEqual(['興耀樓', 'osm', '屯門區']);
   });
 
+  it('prefers identify over OpenStreetMap when both answer', async () => {
+    respond({
+      'www.map.gov.hk/gs/api/v1.0.0/identify': [{ nameZH: '興耀樓' }],
+      'nominatim.openstreetmap.org': { name: 'OSM名', address: { building: 'OSM名' } },
+    });
+    const r = await reverseGeocode(p80, origin);
+    expect([r?.name, r?.source]).toEqual(['興耀樓', 'identify']);
+  });
+
+  it('reports the place before the ALS lookup finishes, then adds the ALS address', async () => {
+    let releaseAls!: () => void;
+    const alsGate = new Promise<void>(r => { releaseAls = r; });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('www.map.gov.hk')) return new Response(JSON.stringify([{ nameZH: '興輝樓' }]));
+      if (url.includes('als.gov.hk')) {
+        await alsGate;
+        return new Response(JSON.stringify({ SuggestedAddress: [{ Address: { PremisesAddress: {
+          ChiPremisesAddress: { Region: '新界', BuildingName: '興輝樓' },
+          GeospatialInformation: { Easting: String(origin.x), Northing: String(origin.y) } } } }] }));
+      }
+      throw new TypeError('Failed to fetch');
+    }));
+    const partials: (string | undefined)[] = [];
+    const done = reverseGeocode(p80, origin, undefined, pl => partials.push(`${pl.name}|${pl.address ?? ''}`));
+    await vi.waitFor(() => expect(partials).toEqual(['興輝樓|']));
+    releaseAls();
+    expect((await done)?.address).toBe('新界興輝樓');
+  });
+
+  it('shows the OpenStreetMap result first, then replaces it with the government name', async () => {
+    let releaseGov!: () => void;
+    const govGate = new Promise<void>(r => { releaseGov = r; });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('nominatim')) return new Response(JSON.stringify({ name: 'OSM名', address: { building: 'OSM名' } }));
+      if (url.includes('www.map.gov.hk')) { await govGate; return new Response(JSON.stringify([{ nameZH: '興耀樓' }])); }
+      throw new TypeError('Failed to fetch');
+    }));
+    const partials: string[] = [];
+    const done = reverseGeocode(p80, origin, undefined, pl => partials.push(`${pl.name}|${pl.source}`));
+    await vi.waitFor(() => expect(partials).toEqual(['OSM名|osm']));
+    releaseGov();
+    expect((await done)?.name).toBe('興耀樓');
+    expect(partials).toEqual(['OSM名|osm', '興耀樓|identify']);
+  });
+
   it('returns null only when every source fails', async () => {
     respond({});
     expect(await reverseGeocode(p80, origin)).toBeNull();
