@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import alsStreet from './__fixtures__/als-street-query.json';
 import identifyKamSheung from './__fixtures__/identify-kam-sheung-road.json';
+import identifyTinFuk from './__fixtures__/identify-tin-fuk-road.json';
+import identifyTinShuiWai from './__fixtures__/identify-tin-shui-wai-station.json';
+import identifyWangTat from './__fixtures__/identify-wang-tat-road.json';
 import nominatimKamSheung from './__fixtures__/nominatim-kam-sheung-road.json';
 import {
   classifyName, formatAlsChinese, isTitleEligible, parseIdentify, parseNearby, parseNominatim,
   pickAlsAddress, pickLandmarks, pickTitle, reverseGeocode, type PlaceCandidate,
 } from './reverseGeocode';
 
+/** 實測位置：天水圍站（手機 debug 面板錄到） */
+const tsw = { x: 818477.0, y: 834242.6, lat: 22.447608, lng: 114.003996 };
 /** 實測位置：錦上路站附近（手機 debug 面板錄到） */
 const kam = { x: 824647.8, y: 832746.0, lat: 22.434066, lng: 114.063997 };
 const origin = { x: 816500, y: 825700, lat: 22.40801, lng: 113.97312 };
@@ -31,6 +37,30 @@ describe('parseIdentify (real captured response)', () => {
   it('does not pick up status-like fields as names (nameStatus used to be matched)', () => {
     const j = { results: [{ addressInfo: [{ cname: null, ename: null, nameStatus: 'ACTIVE', x: 816500, y: 825700 }] }] };
     expect(parseIdentify(j, origin)).toEqual([]);
+  });
+});
+
+describe('parseIdentify: streets have no coordinates (real captures, Tin Shui Wai)', () => {
+  it('treats a street without x/y as being at the query point', () => {
+    const list = parseIdentify(identifyTinFuk, tsw);
+    expect(list).toEqual([{ name: '天福路', address: undefined, distanceM: 0, kind: 'street' }]);
+    expect(pickTitle(list)?.name).toBe('天福路');
+  });
+  it('reads every street at a junction, in order', () => {
+    const list = parseIdentify(identifyWangTat, tsw);
+    expect(list.map(c => c.name)).toEqual(['宏達路', '媽橫路']);
+    expect(pickTitle(list)?.name).toBe('宏達路');
+  });
+  it('a building ~100 m away still beats the street you are on', () => {
+    const list = [...parseIdentify(identifyTinShuiWai, tsw), ...parseIdentify(identifyTinFuk, tsw)];
+    const station = list.find(c => c.name === '天水圍站')!;
+    expect(station.kind).toBe('transport');
+    expect(Math.round(station.distanceM)).toBe(110);
+    expect(pickTitle(list)?.name).toBe('天水圍站');
+  });
+  it('but a street beats a building that is too far to be "where you are"', () => {
+    const list = [c('某某大廈', 280, 'building'), ...parseIdentify(identifyTinFuk, tsw)];
+    expect(pickTitle(list)?.name).toBe('天福路');
   });
 });
 
@@ -82,6 +112,14 @@ describe('parseNearby', () => {
     const junk = Array.from({ length: 900 }, (_, i) => ({ cname: `WiFi.HK 熱點 ${i}`, x: 824648 + (i % 30), y: 832746 + (i % 20) }));
     const list = parseNearby([...junk, { cname: '路旁泊車位', x: 824650, y: 832750 }, { cname: '錦田南花園', x: 824700, y: 832760 }], kam);
     expect(pickTitle(list)?.name).toBe('錦田南花園');
+  });
+});
+
+describe('ALS (real capture)', () => {
+  it('ignores suggestions far from you, and ones without a Chinese address block', () => {
+    expect(pickAlsAddress(alsStreet, { x: tsw.x, y: tsw.y })).toBeUndefined();
+    // 就算近，只有英文地址都唔會出錯
+    expect(pickAlsAddress(alsStreet, { x: 836410, y: 827547 })).toBeUndefined();
   });
 });
 
@@ -142,6 +180,25 @@ describe('reverseGeocode', () => {
     const r = await done;
     expect([r?.name, r?.kind, r?.source]).toEqual(['錦上路站', 'transport', 'identify']);
     expect(fetchFn.mock.calls.map(c => c[0] as string).some(u => u.includes('geodata.gov.hk/gs/api'))).toBe(false);
+  });
+
+  it('on a street: titles it 「天福路」 at the point, and does not waste an ALS call on a street name', async () => {
+    const fetchFn = stub(url => {
+      if (url.includes('/identify')) return json(identifyTinFuk);
+      throw new TypeError('Failed to fetch');
+    });
+    const r = await reverseGeocode({ x: tsw.x, y: tsw.y, source: 'local' }, tsw);
+    expect([r?.name, r?.kind, r?.proximity]).toEqual(['天福路', 'street', 'at']);
+    expect(fetchFn.mock.calls.map(c => String(c[0])).some(u => u.includes('als.gov.hk'))).toBe(false);
+  });
+
+  it('at a junction, the second street becomes a landmark without a distance', async () => {
+    stub(url => {
+      if (url.includes('/identify')) return json(identifyWangTat);
+      throw new TypeError('Failed to fetch');
+    });
+    const r = await reverseGeocode({ x: tsw.x, y: tsw.y, source: 'local' }, tsw);
+    expect([r?.name, r?.landmarks.map(l => l.name)]).toEqual(['宏達路', ['媽橫路']]);
   });
 
   it('never calls OpenStreetMap by default, and returns null (coordinates only) when government APIs fail', async () => {

@@ -75,7 +75,7 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
           {place?.address && <p className="card__sub">{place.address}</p>}
           {place && place.landmarks.length > 0 && (
             <p className="card__landmarks">
-              附近還有：{place.landmarks.map(l => `${l.name}（${Math.round(l.distanceM)} 米）`).join('、')}
+              附近還有：{place.landmarks.map(l => (Math.round(l.distanceM) > 0 ? `${l.name}（${Math.round(l.distanceM)} 米）` : l.name)).join('、')}
             </p>
           )}
           {place?.source === 'osm' && <p className="card__source">地址資料來源：OpenStreetMap</p>}

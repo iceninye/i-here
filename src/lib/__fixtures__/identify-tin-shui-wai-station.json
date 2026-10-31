@@ -1,0 +1,43 @@
+{
+  "_fixture": "Abridged from a real www.map.gov.hk identify response captured on a phone (x=818477, y=834243, lang=zh). Cut off by the 600-char debug snippet after the first nested facility; only fields present in the capture are kept.",
+  "results": [
+    {
+      "type": "ADDRESS",
+      "eheader": "Building Information",
+      "cheader": "建築物資訊",
+      "addressInfo": [
+        {
+          "ename": "Tin Shui Wai Station",
+          "cname": "天水圍站",
+          "eaddress": null,
+          "caddress": null,
+          "nameStatus": null,
+          "otherEname": [],
+          "otherCname": [],
+          "addressType": "B",
+          "x": 818408,
+          "y": 834157,
+          "uniqueId": "1105723874",
+          "hashTag": [],
+          "facility": [
+            {
+              "type": "FACI",
+              "eheader": "Automated External Defibrillators",
+              "cheader": "自動心臟除顫器",
+              "addressInfo": [
+                {
+                  "ename": "Automated External Defibrillators - Tin Shui Wai Station",
+                  "cname": "自動心臟除顫器 - 天水圍站",
+                  "eaddress": "Tin Shui Wai Station",
+                  "caddress": "天水圍站",
+                  "nameStatus": null,
+                  "otherEname": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

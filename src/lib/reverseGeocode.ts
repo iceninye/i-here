@@ -78,6 +78,7 @@ const ESTATE = /邨|苑|花園|廣場|中心|大廈|大樓|商場|閣|居|軒|�
 const STREET = /[路街道里徑巷]$/;
 
 export function classifyName(name: string, addressType?: string | null): PlaceKind {
+  if (addressType === 'ST') return 'street';
   if (addressType === 'B') return TRANSPORT.test(name) ? 'transport' : ESTATE.test(name) ? 'estate' : 'building';
   if (TRANSPORT.test(name)) return 'transport';
   if (ESTATE.test(name)) return 'estate';
@@ -137,6 +138,9 @@ function distanceTo(o: Record<string, unknown>, origin: Origin): number {
  *   { results: [ { type: 'ADDRESS', addressInfo: [ { cname, ename, caddress, eaddress, addressType: 'B', x, y,
  *                   hashTag, facility: [ …嵌套嘅設施（AED 等）… ] } ] } ] }
  * 只讀第一層 addressInfo；嵌套嘅 `facility` 係呢幢大廈入面嘅設施，唔係你所在嘅地方，所以唔讀。
+ *
+ * 街道（addressType 'ST'）冇座標（x、y 係 null），而且可以同時有幾條（路口，例如宏達路 + 媽橫路）。
+ * identify 本身就係「呢個點有咩」嘅查詢，所以冇座標嘅結果當作就喺查詢點（距離 0）。
  */
 export function parseIdentify(json: unknown, origin: Origin): PlaceCandidate[] {
   const results = isRecord(json) && Array.isArray(json.results) ? json.results : [];
@@ -147,10 +151,11 @@ export function parseIdentify(json: unknown, origin: Origin): PlaceCandidate[] {
       if (!isRecord(item)) continue;
       const name = str(item.cname) ?? str(item.ename);
       if (!name) continue;
+      const d = distanceTo(item, origin);
       out.push({
         name,
         address: str(item.caddress) ?? str(item.eaddress),
-        distanceM: distanceTo(item, origin),
+        distanceM: Number.isFinite(d) ? d : 0,
         kind: classifyName(name, str(item.addressType) ?? 'B'),
       });
     }
@@ -368,7 +373,11 @@ export async function reverseGeocode(
   if (!title) return null;
 
   const chosen = title;
-  const [address, nearbyAll] = await Promise.all([lookupAls(chosen, p, signal), nearby ?? nearbyP]);
+  // 街名唔使查 ALS：實測 ALS 對「天福路」會回沙田嘅結果，只會白白多一個請求
+  const [address, nearbyAll] = await Promise.all([
+    chosen.kind === 'street' ? undefined : lookupAls(chosen, p, signal),
+    nearby ?? nearbyP,
+  ]);
   return {
     ...toPlace(chosen, source, pickLandmarks([...identified, ...nearbyAll], chosen)),
     address: address ?? chosen.address,
