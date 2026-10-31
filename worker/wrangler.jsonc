@@ -1,7 +1,0 @@
-{
-  // 可選 CORS 代理：cd worker && npx wrangler deploy
-  // 部署後喺 GitHub repo 設定 Actions variable VITE_API_PROXY=https://i-here-proxy.<you>.workers.dev
-  "name": "i-here-proxy",
-  "main": "index.ts",
-  "compatibility_date": "2025-09-01"
-}

@@ -1,14 +1,21 @@
-import { ENDPOINTS, apiUrl } from '../config';
+import { ENDPOINTS, OSM_FALLBACK } from '../config';
 import { fetchJson } from './fetchJson';
 import { haversineM } from './geo';
 import type { HK80Point } from './hk80';
+
+/**
+ * 地名類別。排序用：建築物 / 屋苑 > 交通 > 店舖 > 設施 > 街道。
+ * 標題要係「你身處嘅地方」，唔可以係 WiFi 熱點、郵箱、路旁泊車位呢類設施。
+ */
+export type PlaceKind = 'building' | 'estate' | 'transport' | 'shop' | 'facility' | 'street' | 'other';
 
 /** 附近一個可以讀出嚟嘅地方（大廈 / 屋邨 / 設施 / 地標） */
 export interface PlaceCandidate {
   name: string;
   address?: string;
-  /** 同使用者嘅距離（米）；回應冇座標時係 NaN */
+  /** 同使用者嘅距離（米）；冇座標時係 NaN */
   distanceM: number;
+  kind: PlaceKind;
 }
 
 export type PlaceSource = 'identify' | 'nearby' | 'osm';
@@ -19,6 +26,7 @@ export interface ResolvedPlace {
   /** 「就喺度」/「附近」— 按距離揀 */
   proximity: 'at' | 'near';
   distanceM: number;
+  kind: PlaceKind;
   /** 官方門牌地址（ALS 補全；冇就用來源本身嘅地址） */
   address?: string;
   /** 另外幾個附近地標，幫手對照 */
@@ -34,12 +42,6 @@ export interface Origin {
   lng: number;
 }
 
-const NAME_KEYS = ['nameZH', 'nameTC', 'nameZh', 'cname', 'cName', 'chineseName', 'chiName', 'name_zh', 'name', 'nameEN', 'ename'];
-const ADDR_KEYS = ['addressZH', 'addressTC', 'addressZh', 'caddress', 'cAddress', 'chineseAddress', 'chiAddress', 'address_zh', 'address', 'addressEN', 'eaddress'];
-/** 呢啲 key 雖然有 "name"，但係圖層 / 類別名，唔係地方名 */
-const NOT_PLACE_KEY = /layer|type|class|categ|field|alias|display|source|district|region/i;
-const CJK = /[㐀-鿿]/;
-
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
@@ -49,68 +51,142 @@ function num(v: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
 
-/** 先試已知 key；再試任何「似地方名」嘅 key，中文優先 */
-function pickName(o: Record<string, unknown>): string | undefined {
-  const known = NAME_KEYS.map(k => str(o[k])).filter((v): v is string => !!v);
-  const fuzzy = Object.entries(o)
-    .filter(([k]) => /name/i.test(k) && !NOT_PLACE_KEY.test(k) && !NAME_KEYS.includes(k))
-    .map(([, v]) => str(v))
-    .filter((v): v is string => !!v);
-  const all = [...known, ...fuzzy].filter(v => !/^[\d\s\-.]+$/.test(v));
-  return all.find(v => CJK.test(v)) ?? all[0];
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
-function pickAddress(o: Record<string, unknown>): string | undefined {
-  const known = ADDR_KEYS.map(k => str(o[k])).filter((v): v is string => !!v);
-  const fuzzy = Object.entries(o)
-    .filter(([k]) => /addr/i.test(k) && !ADDR_KEYS.includes(k))
-    .map(([, v]) => str(v))
-    .filter((v): v is string => !!v);
-  const all = [...known, ...fuzzy];
-  return all.find(v => CJK.test(v)) ?? all[0];
+/* ---------------- 分類 ---------------- */
+
+/** 絕對唔可以做標題嘅設施（實測 searchNearby 最前面幾乎全係呢啲） */
+const TITLE_BLACKLIST = [
+  /wi-?fi|熱點/i,
+  /郵箱|郵筒|信箱|郵政信箱/,
+  /泊車位|停車位|咪錶|路旁|電動車|充電/,
+  /停車場|泊車處|car ?park/i,
+  /除顫器|\baed\b/i,
+  /回收|垃圾|食水|飲水/,
+  /公廁|公共廁所|洗手間|廁所/,
+  /燈柱|交通燈|行人過路|巴士站牌|電話亭/,
+];
+
+export function isTitleEligible(name: string): boolean {
+  return !TITLE_BLACKLIST.some(r => r.test(name));
+}
+
+const TRANSPORT = /站$|碼頭|總站|轉車站|渡輪|機場|口岸|隧道/;
+const ESTATE = /邨|苑|花園|廣場|中心|大廈|大樓|商場|閣|居|軒|匯|城|樓|山莊|園$/;
+const STREET = /[路街道里徑巷]$/;
+
+export function classifyName(name: string, addressType?: string | null): PlaceKind {
+  if (addressType === 'B') return TRANSPORT.test(name) ? 'transport' : ESTATE.test(name) ? 'estate' : 'building';
+  if (TRANSPORT.test(name)) return 'transport';
+  if (ESTATE.test(name)) return 'estate';
+  if (STREET.test(name)) return 'street';
+  return addressType ? 'other' : 'facility';
+}
+
+/**
+ * 標題分數 = 距離（米）+ 類別罰分，越低越好。
+ * 例：40 m 外嘅大廈（40）勝過 10 m 外嘅店舖（10+40=50）；5 m 嘅店舖（45）勝過 60 m 外嘅大廈（60）。
+ */
+const KIND_PENALTY: Record<PlaceKind, number> = {
+  building: 0, estate: 0, transport: 20, shop: 40, facility: 60, street: 130, other: 150,
+};
+/** 標題最遠距離（米）；店舖 / 設施要更近 */
+const KIND_MAX_M: Record<PlaceKind, number> = {
+  building: 300, estate: 300, transport: 250, shop: 50, facility: 120, street: 150, other: 150,
+};
+
+function eligibleAsTitle(c: PlaceCandidate): boolean {
+  return isTitleEligible(c.name) && Number.isFinite(c.distanceM) && c.distanceM <= KIND_MAX_M[c.kind];
+}
+
+export function pickTitle(cands: PlaceCandidate[]): PlaceCandidate | undefined {
+  return cands
+    .filter(eligibleAsTitle)
+    .sort((a, b) => a.distanceM + KIND_PENALTY[a.kind] - (b.distanceM + KIND_PENALTY[b.kind]))[0];
+}
+
+/** 「附近還有」：唔重複標題、唔係黑名單、300 米內、近到遠、最多 3 個 */
+export function pickLandmarks(cands: PlaceCandidate[], title: PlaceCandidate): PlaceCandidate[] {
+  return cands
+    .filter(c => c.name !== title.name && isTitleEligible(c.name) && Number.isFinite(c.distanceM) && c.distanceM <= 300)
+    .sort((a, b) => a.distanceM - b.distanceM)
+    .filter((c, i, arr) => arr.findIndex(o => o.name === c.name) === i)
+    .slice(0, 3);
 }
 
 function distanceTo(o: Record<string, unknown>, origin: Origin): number {
-  const x = num(o.x ?? o.X ?? o.easting ?? o.Easting ?? o.hkE ?? o.E);
-  const y = num(o.y ?? o.Y ?? o.northing ?? o.Northing ?? o.hkN ?? o.N);
+  const x = num(o.x);
+  const y = num(o.y);
   if (x !== undefined && y !== undefined && x > 790000 && x < 880000 && y > 790000 && y < 850000) {
     return Math.hypot(x - origin.x, y - origin.y);
   }
-  const lat = num(o.lat ?? o.latitude ?? o.Latitude);
-  const lng = num(o.lng ?? o.lon ?? o.long ?? o.longitude ?? o.Longitude);
+  const lat = num(o.lat ?? o.latitude);
+  const lng = num(o.lng ?? o.lon ?? o.long ?? o.longitude);
   if (lat !== undefined && lng !== undefined && Math.abs(lat - 22.3) < 1 && Math.abs(lng - 114.1) < 1) {
     return haversineM(lat, lng, origin.lat, origin.lng);
   }
   return NaN;
 }
 
+/* ---------------- identify ---------------- */
+
 /**
- * 地政總署 identify / searchNearby 嘅回應結構未有公開 schema，而欄位名喺唔同圖層之間唔一致。
- * 呢度唔假設固定結構：遞迴搵所有「有地方名」嘅 object，有座標就計距離。
- * 有距離嘅排前（近到遠），冇距離嘅保持原本次序排後。
+ * identify 回應（實測）：
+ *   { results: [ { type: 'ADDRESS', addressInfo: [ { cname, ename, caddress, eaddress, addressType: 'B', x, y,
+ *                   hashTag, facility: [ …嵌套嘅設施（AED 等）… ] } ] } ] }
+ * 只讀第一層 addressInfo；嵌套嘅 `facility` 係呢幢大廈入面嘅設施，唔係你所在嘅地方，所以唔讀。
  */
-export function extractCandidates(json: unknown, origin: Origin): PlaceCandidate[] {
+export function parseIdentify(json: unknown, origin: Origin): PlaceCandidate[] {
+  const results = isRecord(json) && Array.isArray(json.results) ? json.results : [];
   const out: PlaceCandidate[] = [];
-  const seen = new Set<string>();
-  const walk = (node: unknown, depth: number) => {
-    if (depth > 8 || !node || typeof node !== 'object') return;
-    if (Array.isArray(node)) return node.forEach(n => walk(n, depth + 1));
-    const o = node as Record<string, unknown>;
-    const name = pickName(o);
-    if (name) {
-      const distanceM = distanceTo(o, origin);
-      const key = `${name}|${Number.isFinite(distanceM) ? Math.round(distanceM) : ''}`;
-      if (!seen.has(name) && !seen.has(key)) {
-        seen.add(name);
-        seen.add(key);
-        out.push({ name, address: pickAddress(o), distanceM });
-      }
+  for (const r of results) {
+    const infos = isRecord(r) && Array.isArray(r.addressInfo) ? r.addressInfo : [];
+    for (const item of infos) {
+      if (!isRecord(item)) continue;
+      const name = str(item.cname) ?? str(item.ename);
+      if (!name) continue;
+      out.push({
+        name,
+        address: str(item.caddress) ?? str(item.eaddress),
+        distanceM: distanceTo(item, origin),
+        kind: classifyName(name, str(item.addressType) ?? 'B'),
+      });
     }
-    for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v, depth + 1);
-  };
-  walk(json, 0);
-  const withD = out.filter(c => Number.isFinite(c.distanceM)).sort((a, b) => a.distanceM - b.distanceM);
-  return [...withD, ...out.filter(c => !Number.isFinite(c.distanceM))];
+  }
+  return out;
+}
+
+/* ---------------- searchNearby ---------------- */
+
+/**
+ * searchNearby：未有完整真實 fixture（debug 面板「複製原始回應」可以錄低）。
+ * 所以呢度只收「陣列（或 results / data / items 入面嘅陣列）+ 明確嘅名稱 key」，唔再做模糊搵 key。
+ * 回應冇距離上限（實測 582–1438 項），距離同黑名單都喺 pickTitle / pickLandmarks 篩。
+ */
+const NEARBY_NAME_KEYS = ['cname', 'nameZH', 'nameTC', 'name', 'ename', 'nameEN'];
+const NEARBY_ADDR_KEYS = ['caddress', 'addressZH', 'addressTC', 'address', 'eaddress', 'addressEN'];
+
+export function parseNearby(json: unknown, origin: Origin): PlaceCandidate[] {
+  const list = Array.isArray(json)
+    ? json
+    : isRecord(json)
+      ? [json.results, json.data, json.items, json.addressInfo].find(Array.isArray) ?? []
+      : [];
+  const out: PlaceCandidate[] = [];
+  for (const item of list as unknown[]) {
+    if (!isRecord(item)) continue;
+    const name = NEARBY_NAME_KEYS.map(k => str(item[k])).find(Boolean);
+    if (!name) continue;
+    out.push({
+      name,
+      address: NEARBY_ADDR_KEYS.map(k => str(item[k])).find(Boolean),
+      distanceM: distanceTo(item, origin),
+      kind: classifyName(name),
+    });
+  }
+  return out;
 }
 
 /* ---------------- OGCIO ALS ---------------- */
@@ -191,6 +267,7 @@ export function parseNominatim(json: unknown, origin: Origin): PlaceCandidate | 
     name,
     address,
     distanceM: lat !== undefined && lng !== undefined ? haversineM(lat, lng, origin.lat, origin.lng) : NaN,
+    kind: classifyName(name),
   };
 }
 
@@ -198,13 +275,29 @@ export function parseNominatim(json: unknown, origin: Origin): PlaceCandidate | 
 
 /** 25 m 內當「就喺呢度」，否則「附近」 */
 const AT_THRESHOLD_M = 25;
-/** identify 冇俾座標時，當佢就喺查詢點 */
-const assumeAtPoint = (c: PlaceCandidate): PlaceCandidate =>
-  Number.isFinite(c.distanceM) ? c : { ...c, distanceM: 0 };
+/** 每個來源最多等幾耐。 */
+const SOURCE_TIMEOUT_MS = 5000;
 
-async function tryExtract(url: string, name: string, origin: Origin, signal?: AbortSignal): Promise<PlaceCandidate[]> {
+function toPlace(c: PlaceCandidate, source: PlaceSource, landmarks: PlaceCandidate[]): ResolvedPlace {
+  return {
+    name: c.name,
+    proximity: c.distanceM <= AT_THRESHOLD_M ? 'at' : 'near',
+    distanceM: c.distanceM,
+    kind: c.kind,
+    address: c.address,
+    landmarks,
+    source,
+  };
+}
+
+async function tryParse<T>(
+  url: string,
+  name: string,
+  parse: (json: unknown) => T[],
+  signal?: AbortSignal,
+): Promise<T[]> {
   try {
-    return extractCandidates(await fetchJson(apiUrl(url), { signal, timeoutMs: SOURCE_TIMEOUT_MS, name }), origin);
+    return parse(await fetchJson(url, { signal, timeoutMs: SOURCE_TIMEOUT_MS, name }));
   } catch (e) {
     if (signal?.aborted) throw e;
     return [];
@@ -223,27 +316,22 @@ async function tryOsm(origin: Origin, signal?: AbortSignal): Promise<PlaceCandid
   }
 }
 
-function toPlace(c: PlaceCandidate, source: PlaceSource, landmarks: PlaceCandidate[]): ResolvedPlace {
-  return {
-    name: c.name,
-    proximity: c.distanceM <= AT_THRESHOLD_M ? 'at' : 'near',
-    distanceM: c.distanceM,
-    address: c.address,
-    landmarks,
-    source,
-  };
+async function lookupAls(title: PlaceCandidate, p: HK80Point, signal?: AbortSignal): Promise<string | undefined> {
+  try {
+    const q = encodeURIComponent(title.address ? `${title.name} ${title.address}` : title.name);
+    return pickAlsAddress(await fetchJson(`${ENDPOINTS.als}?q=${q}&n=5`, { signal, timeoutMs: 4000, name: 'ALS' }), p);
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return undefined; // ALS 失敗唔緊要，用來源本身嘅地址
+  }
 }
-
-/** 每個來源最多等幾耐。全部並行，所以最差情況係呢個時間 + ALS，而唔係逐個加埋。 */
-const SOURCE_TIMEOUT_MS = 5000;
 
 /**
  * HK80 → 地方名 + 地址：
- *  1. identify（www.map.gov.hk 同 geodata.gov.hk 鏡像）、searchNearby、OpenStreetMap **全部並行**
- *     （實測政府 API 喺手機上可以好慢，逐個試要 20 秒以上）
- *  2. 揀地名：identify > 最近嘅 searchNearby 設施 > OpenStreetMap
- *  3. onPartial：OSM 一到先回報一次（暫時），政府 API 答完再回報揀好嘅地名，畫面即刻有字
- *  4. 有地名就用 ALS 補官方門牌地址，回傳完整結果
+ *  1. identify（所在大廈）同 searchNearby（附近設施）並行
+ *  2. identify 一回（~0.7 s）就揀標題並 onPartial，畫面即刻有字；之後 ALS 補官方門牌地址，同 searchNearby 並行
+ *  3. identify 冇可用標題 → 等 searchNearby，經分類 / 黑名單 / 距離篩選後揀
+ *  4. 全部冇 → 只有 build 時開咗 VITE_OSM_FALLBACK 先會問 OpenStreetMap；否則回 null（畫面只顯示座標，仍可分享）
  */
 export async function reverseGeocode(
   p: HK80Point,
@@ -254,49 +342,35 @@ export async function reverseGeocode(
   const origin: Origin = { x: p.x, y: p.y, lat: at.lat, lng: at.lng };
   const qs = `x=${Math.round(p.x)}&y=${Math.round(p.y)}&lang=zh`;
 
-  let govDone = false;
-  const osmP = tryOsm(origin, signal).then(osm => {
-    // OSM 通常最快（實測 ~0.3 s）；政府 API 未答就先顯示 OSM 結果，之後再換成官方地名
-    if (osm && !govDone) onPartial?.(toPlace(osm, 'osm', []));
-    return osm;
-  });
-  const [main, mirror, nearby] = await Promise.all([
-    tryExtract(`${ENDPOINTS.identify}?${qs}`, 'identify', origin, signal),
-    tryExtract(`${ENDPOINTS.identifyAlt}?${qs}`, 'identify (geodata)', origin, signal),
-    tryExtract(`${ENDPOINTS.searchNearby}?${qs}`, 'searchNearby', origin, signal),
-  ]);
-  govDone = true;
-  const osm = await osmP;
-  const identified = main.length ? main : mirror;
+  const identifyP = tryParse(`${ENDPOINTS.identify}?${qs}`, 'identify', j => parseIdentify(j, origin), signal);
+  const nearbyP = tryParse(`${ENDPOINTS.searchNearby}?${qs}`, 'searchNearby', j => parseNearby(j, origin), signal);
 
+  const identified = await identifyP;
+  let title = pickTitle(identified);
   let source: PlaceSource = 'identify';
-  let top: PlaceCandidate | undefined = identified.map(assumeAtPoint)[0];
-  const nearbySorted = nearby.filter(c => Number.isFinite(c.distanceM));
-  // identify 個點冇嘢（例如企喺馬路 / 公園）→ 用最近嘅附近設施
-  if (!top || (nearbySorted[0] && top.distanceM > nearbySorted[0].distanceM + 30)) {
-    if (nearbySorted[0]) { top = nearbySorted[0]; source = 'nearby'; }
+
+  if (title) {
+    onPartial?.(toPlace(title, source, pickLandmarks(identified, title)));
   }
-  if (!top && osm) { top = osm; source = 'osm'; }
-  if (!top) return null;
-  const chosen = top;
 
-  const landmarks = [...identified, ...nearbySorted]
-    .filter(c => c.name !== chosen.name && Number.isFinite(c.distanceM) && c.distanceM <= 300)
-    .sort((a, b) => a.distanceM - b.distanceM)
-    .filter((c, i, arr) => arr.findIndex(o => o.name === c.name) === i)
-    .slice(0, 3);
-
-  const base = toPlace(chosen, source, landmarks);
-  onPartial?.(base);
-
-  try {
-    const q = encodeURIComponent(chosen.address ? `${chosen.name} ${chosen.address}` : chosen.name);
-    const als = await fetchJson(apiUrl(`${ENDPOINTS.als}?q=${q}&n=5`), { signal, timeoutMs: 4000, name: 'ALS' });
-    const address = pickAlsAddress(als, p);
-    if (address) return { ...base, address };
-  } catch (e) {
-    if (signal?.aborted) throw e;
-    // ALS 失敗唔緊要，用來源本身嘅地址
+  // identify 已有標題：ALS 同 searchNearby 並行；否則先等 searchNearby
+  const nearby = title ? undefined : await nearbyP;
+  if (!title && nearby) {
+    title = pickTitle(nearby);
+    source = 'nearby';
+    if (title) onPartial?.(toPlace(title, source, pickLandmarks([...identified, ...nearby], title)));
   }
-  return base;
+
+  if (!title && OSM_FALLBACK) {
+    const osm = await tryOsm(origin, signal);
+    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [])); }
+  }
+  if (!title) return null;
+
+  const chosen = title;
+  const [address, nearbyAll] = await Promise.all([lookupAls(chosen, p, signal), nearby ?? nearbyP]);
+  return {
+    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearbyAll], chosen)),
+    address: address ?? chosen.address,
+  };
 }

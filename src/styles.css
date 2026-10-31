@@ -148,3 +148,5 @@ button:focus-visible, a:focus-visible { outline: 4px solid #ffbf00; outline-offs
 .debug__copy { margin: 6px 0; padding: 6px 12px; border-radius: 8px; border: 1px solid #5c6773; background: #222a33; color: inherit; font: inherit; }
 .debug__log { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; }
 .card__source { font-size: 0.85rem; margin-top: 6px !important; color: var(--ink-2); }
+.debug__buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.debug__copy:disabled { opacity: 0.4; }

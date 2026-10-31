@@ -28,7 +28,7 @@ jobs:
       - run: npm run build
         env:
           # 喺 repo Settings → Secrets and variables → Actions → Variables 設定（可選）
-          VITE_API_PROXY: ${{ vars.VITE_API_PROXY }}
+          VITE_OSM_FALLBACK: ${{ vars.VITE_OSM_FALLBACK }}
           VITE_LANDSD_3DTILES_URL: ${{ vars.VITE_LANDSD_3DTILES_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:

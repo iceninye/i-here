@@ -7,7 +7,7 @@ describe('buildShareText', () => {
   it('puts the headline first and includes address, landmarks and both links', () => {
     const text = buildShareText(fix, {
       name: '興輝樓', proximity: 'near', distanceM: 40, address: '新界屯門區大興邨興輝樓',
-      landmarks: [{ name: '大興體育館', distanceM: 90 }], source: 'identify',
+      landmarks: [{ name: '大興體育館', distanceM: 90, kind: 'facility' }], source: 'identify', kind: 'estate',
     }, new Date(2026, 0, 1, 9, 5).getTime());
     const lines = text.split('\n');
     expect(lines[0]).toBe('📍 我而家喺：興輝樓附近');

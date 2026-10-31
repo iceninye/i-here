@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GEO, GeoError, acquireBestFix, geoErrorFrom, haversineM, isInHongKong, toFix, type Fix } from '../lib/geo';
 import { wgs84ToHK80Api, wgs84ToHK80Local, type HK80Point } from '../lib/hk80';
+import { logFix } from '../lib/fixLog';
 import { reverseGeocode, type ResolvedPlace } from '../lib/reverseGeocode';
 
 export type LocationStatus = 'locating' | 'ready' | 'error';
@@ -108,6 +109,7 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
           const f = toFix(pos);
           const prev = lastFix.current;
           if (!f) return;
+          logFix(f);
           const moved = prev ? haversineM(prev.lat, prev.lng, f.lat, f.lng) : Infinity;
           const better = prev ? f.accuracy < prev.accuracy * 0.7 : true;
           // 只係精度變差但冇郁 → 唔更新，避免精度圈忽大忽細嚇親人
@@ -129,6 +131,7 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
     acquireBestFix({
       maxAgeMs: runId === 0 ? GEO.INITIAL_MAX_AGE_MS : 0, // 首次可用快取；用戶撳重新定位就要新鮮 fix
       onFix: accept,
+      onSample: logFix,
       signal: sampling.signal,
     })
       .then(best => {
