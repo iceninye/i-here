@@ -1,9 +1,11 @@
 {
   // Cloudflare Workers Builds：build 完將 dist/ 當靜態資源上載（冇 Worker script），做法同 mtr-app 一樣。
-  // 可選 CORS 代理係另一個 Worker，見 worker/wrangler.jsonc。
   "name": "i-here",
   "compatibility_date": "2025-09-01",
   "build": { "command": "npm run build" },
+  // PR 分支嘅預覽部署用 `wrangler preview`，佢要求有 previews 區塊（可以係空嘅）；
+  // assets / compatibility_date 仍然喺頂層，唔使重複。
+  "previews": {},
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
