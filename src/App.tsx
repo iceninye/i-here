@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { DebugPanel } from './components/DebugPanel';
+import { Icon } from './components/Icon';
 import { InAppBanner } from './components/InAppBanner';
 import { LocationCard } from './components/LocationCard';
 import { MapView } from './components/MapView';
@@ -30,7 +31,7 @@ export default function App() {
             <p className="card__eyebrow">對方分享的位置</p>
             <p className="card__title">{shared.label ?? '地圖上的紅色標記'}</p>
             <a className="card__action" href={googleMapsUrl(shared.lat, shared.lng)} target="_blank" rel="noopener">
-              🧭 用 Google 地圖導航前往
+              <Icon name="navigate" /> 用 Google 地圖導航前往
             </a>
           </section>
         ) : (
@@ -43,7 +44,7 @@ export default function App() {
       <footer className="bottom">
         {viewingShared ? (
           <button type="button" className="share-btn share-btn--secondary" onClick={backToMe}>
-            📍 看看我自己的位置
+            <Icon name="pin" /> 看看我自己的位置
           </button>
         ) : (
           <ShareButton fix={loc.fix} place={loc.place} failed={loc.status === 'error'} />
@@ -51,11 +52,11 @@ export default function App() {
         <div className="tools">
           {!viewingShared && (
             <button type="button" className="tool-btn" onClick={loc.refresh} disabled={loc.status === 'locating'}>
-              <span aria-hidden="true">🔄</span> 重新定位
+              <Icon name="refresh" /> 重新定位
             </button>
           )}
           <button type="button" className="tool-btn" onClick={() => setIs3D(v => !v)} aria-pressed={is3D}>
-            <span aria-hidden="true">{is3D ? '🗺️' : '🏢'}</span> {is3D ? '平面地圖' : '立體圖'}
+            <Icon name={is3D ? 'layers' : 'cube'} /> {is3D ? '平面地圖' : '立體圖'}
           </button>
         </div>
         {/* 版本：手機有時會跑緊舊快取，貼問題嚟嘅時候一眼睇到係邊個版本（日期時間係 UTC，香港 +8 小時） */}

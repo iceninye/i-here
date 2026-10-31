@@ -15,7 +15,7 @@ import identifyWangTat from './__fixtures__/identify-wang-tat-road.json';
 import nominatimKamSheung from './__fixtures__/nominatim-kam-sheung-road.json';
 import {
   classifyName, formatAlsChinese, isTitleEligible, parseIdentify, parseNearby, parseNominatim,
-  pickAlsAddress, pickLandmarks, pickTitle, reverseGeocode, type PlaceCandidate,
+  pickAlsAddress, pickLandmarks, pickTitle, proximityFor, reverseGeocode, type PlaceCandidate,
 } from './reverseGeocode';
 
 /** 實測位置：錦上路站 A 出口（±3 m；官方坐標轉換 API 回 hkE 824534.201 / hkN 832883.635） */
@@ -138,7 +138,18 @@ describe('Kam Sheung Road station exit D (real captures, ±2 m fix)', () => {
     expect(classifyName('柏瓏', 'S')).toBe('estate');
     expect(classifyName('7-11便利店-元朗')).toBe('shop');
     expect(classifyName('天福路', 'ST')).toBe('street');
-    expect(classifyName('興輝樓', 'B')).toBe('estate');
+    expect(classifyName('興輝樓', 'B')).toBe('building');
+    expect(classifyName('興輝樓')).toBe('building');
+    expect(classifyName('大興邨', 'B')).toBe('estate');
+    expect(classifyName('大埔道公園')).toBe('estate');
+  });
+
+  it('treats lifts and escalators as junk (they showed up as "附近還有：升降機")', () => {
+    for (const n of ['升降機', '扶手電梯', '樓梯', '通道']) {
+      expect(isTitleEligible(n), n).toBe(false);
+    }
+    expect(pickLandmarks([c('興輝樓', 0, 'building'), c('升降機', 70), c('OK便利店', 45, 'shop')], c('興輝樓', 0, 'building'))
+      .map(x => x.name)).toEqual(['OK便利店']);
   });
 
   it('parseNearby drops the street-named parking records and street-kind items, keeps exits and shops', () => {
@@ -396,5 +407,28 @@ describe('reverseGeocode', () => {
     expect(partials).toEqual(['錦上路站|identify', '大埔道公園|nearby']);
     expect([r?.name, r?.source]).toEqual(['大埔道公園', 'nearby']);
     expect(r?.landmarks.map(l => l.name)).toEqual(['錦上路站']);
+  });
+});
+
+describe('proximityFor', () => {
+  it('uses the 25 m threshold when the fix is accurate', () => {
+    expect(proximityFor(20, 10)).toBe('at');
+    expect(proximityFor(25, 25)).toBe('at');
+    expect(proximityFor(30, 10)).toBe('near');
+  });
+
+  it('gets stricter as accuracy degrades', () => {
+    // 準確度 50 m → 「喺」門檻收細到 12.5 m
+    expect(proximityFor(10, 50)).toBe('at');
+    expect(proximityFor(20, 50)).toBe('near');
+    // 準確度 100 m → 門檻 6.25 m
+    expect(proximityFor(20, 100)).toBe('near');
+    // 準確度極差 → 門檻封底 5 m
+    expect(proximityFor(4, 500)).toBe('at');
+    expect(proximityFor(20, 500)).toBe('near');
+  });
+
+  it('treats a non-finite distance as near', () => {
+    expect(proximityFor(NaN, 10)).toBe('near');
   });
 });

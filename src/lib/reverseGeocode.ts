@@ -72,26 +72,38 @@ const TITLE_BLACKLIST = [
   /燈柱|交通燈|行人過路|巴士站牌|電話亭/,
 ];
 
+/** 純設施名稱：本身唔係「地方」，做標題或者「附近還有」都冇意義（實測 searchNearby 會回「升降機」） */
+const GENERIC_FACILITY = new Set(['升降機', '扶手電梯', '扶手梯', '電梯', '樓梯', '通道', '行人通道']);
+
 export function isTitleEligible(name: string): boolean {
-  return !TITLE_BLACKLIST.some(r => r.test(name));
+  return !GENERIC_FACILITY.has(name) && !TITLE_BLACKLIST.some(r => r.test(name));
 }
 
 const TRANSPORT = /站$|進出口|出口|入口|碼頭|總站|轉車站|渡輪|機場|口岸|隧道/;
-const ESTATE = /邨|苑|花園|廣場|中心|大廈|大樓|商場|閣|居|軒|匯|城|樓|山莊|園$/;
+/**
+ * 屋苑 / 商場 / 公園呢類「一片地方」：identify 會用 addressType S / P 直接講明，
+ * searchNearby 冇類型，要靠名稱（例如「大埔道公園」）。
+ */
+const ESTATE = /邨|苑|花園|公園|遊樂場|廣場|商場|街市|體育館|山莊|村|中心|城$/;
+/** 單幢建築物（興輝樓、某某大廈、A 座） */
+const BUILDING = /大廈|大樓|樓|座|閣|居|軒|匯|塔/;
 const SHOP = /便利店|超級市場|超市|餐廳|酒樓|麵包|藥房|藥行|銀行|診所|醫務中心|7-11|惠康|百佳|店$|舖$/;
 const STREET = /[路街道里徑巷]$/;
 
 /**
  * addressType（identify）：ST 街道、S 屋苑 / 村 / 地方名稱、P 建築物平台（例如柏瓏）、B 建築物、F 設施。
  * searchNearby 冇類型，靠名稱判斷。
+ *
+ * B 一律當「建築物」，除非名稱明顯係屋苑 / 商場（大興邨、康怡廣場）：
+ * 「興輝樓」係一幢大廈，唔係一個屋苑，之後做「你喺呢幢大廈」高亮要靠呢個分別。
  */
 export function classifyName(name: string, addressType?: string | null): PlaceKind {
   if (addressType === 'ST') return 'street';
   if (TRANSPORT.test(name)) return 'transport';
   if (addressType === 'S' || addressType === 'P') return 'estate';
-  if (addressType === 'B') return ESTATE.test(name) ? 'estate' : 'building';
-  if (SHOP.test(name)) return 'shop';
   if (ESTATE.test(name)) return 'estate';
+  if (SHOP.test(name)) return 'shop';
+  if (BUILDING.test(name) || addressType === 'B') return 'building';
   if (STREET.test(name)) return 'street';
   return addressType ? 'other' : 'facility';
 }
@@ -302,15 +314,33 @@ export function parseNominatim(json: unknown, origin: Origin): PlaceCandidate | 
 
 /* ---------------- 組合 ---------------- */
 
-/** 25 m 內當「就喺呢度」，否則「附近」 */
+/**
+ * 「就喺呢度 / 附近」門檻 —— 用實際距離同定位準確度，唔再靠 API 嘅 nearBool（後者成日錯）。
+ * 準確度好（≤ 門檻）：門檻內都算「喺」。
+ * 準確度差：按比例收細「喺」嘅範圍（最少 5 m），寧願講「附近」都唔好亂認「喺」。
+ */
 const AT_THRESHOLD_M = 25;
+
+export function proximityFor(dist: number, accuracy = AT_THRESHOLD_M): 'at' | 'near' {
+  if (!Number.isFinite(dist)) return 'near';
+  const atLimit = accuracy <= AT_THRESHOLD_M
+    ? AT_THRESHOLD_M
+    : Math.max(5, (AT_THRESHOLD_M * AT_THRESHOLD_M) / accuracy);
+  return dist <= atLimit ? 'at' : 'near';
+}
+
 /** 每個來源最多等幾耐。 */
 const SOURCE_TIMEOUT_MS = 5000;
 
-function toPlace(c: PlaceCandidate, source: PlaceSource, landmarks: PlaceCandidate[]): ResolvedPlace {
+function toPlace(
+  c: PlaceCandidate,
+  source: PlaceSource,
+  landmarks: PlaceCandidate[],
+  accuracy = AT_THRESHOLD_M,
+): ResolvedPlace {
   return {
     name: c.name,
-    proximity: c.distanceM <= AT_THRESHOLD_M ? 'at' : 'near',
+    proximity: proximityFor(c.distanceM, accuracy),
     distanceM: c.distanceM,
     kind: c.kind,
     address: c.address,
@@ -379,11 +409,12 @@ async function lookupAls(title: PlaceCandidate, p: HK80Point, signal?: AbortSign
  */
 export async function reverseGeocode(
   p: HK80Point,
-  at: { lat: number; lng: number },
+  at: { lat: number; lng: number; accuracy?: number },
   signal?: AbortSignal,
   onPartial?: (place: ResolvedPlace) => void,
 ): Promise<ResolvedPlace | null> {
   const origin: Origin = { x: p.x, y: p.y, lat: at.lat, lng: at.lng };
+  const acc = at.accuracy ?? AT_THRESHOLD_M;
   const qs = `x=${Math.round(p.x)}&y=${Math.round(p.y)}&lang=zh`;
 
   const identifyP = tryParse(`${ENDPOINTS.identify}?${qs}`, 'identify', j => parseIdentify(j, origin), signal);
@@ -395,7 +426,7 @@ export async function reverseGeocode(
 
   // identify 一回就先顯示（~1 s）；之後 searchNearby 一回再比較一次，更貼身嘅（例如 23 米外嘅車站出口
   // 勝過 79 米外嘅屋苑）會取代佢
-  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title)));
+  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title), acc));
   const first = title;
 
   const nearby = await nearbyP;
@@ -403,12 +434,12 @@ export async function reverseGeocode(
   if (best) {
     title = best;
     source = identified.includes(best) ? 'identify' : 'nearby';
-    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best)));
+    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best), acc));
   }
 
   if (!title && OSM_FALLBACK) {
     const osm = await tryOsm(origin, signal);
-    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [])); }
+    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [], acc)); }
   }
   if (!title) return null;
 
@@ -416,7 +447,7 @@ export async function reverseGeocode(
   // 街名唔使查 ALS：實測 ALS 對「天福路」會回沙田嘅結果，只會白白多一個請求
   const address = chosen.kind === 'street' ? undefined : await lookupAls(chosen, p, signal);
   return {
-    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen)),
+    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen), acc),
     address: address ?? chosen.address,
   };
 }

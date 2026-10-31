@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Fix } from '../lib/geo';
 import type { ResolvedPlace } from '../lib/reverseGeocode';
 import { buildShareText, smsUrl, whatsappUrl } from '../lib/shareText';
+import { Icon } from './Icon';
 
 interface Props {
   fix: Fix | null;
@@ -65,15 +66,15 @@ export function ShareButton({ fix, place, failed }: Props) {
         disabled={!fix}
         aria-describedby="share-hint"
       >
-        <span aria-hidden="true" className="share-btn__icon">📤</span>
+        <Icon name="share" />
         <span>{fix ? '分享我的位置' : failed ? '未能取得位置' : '正在定位…'}</span>
       </button>
       <p id="share-hint" className="sr-only">
         會打開分享選單，可以用 WhatsApp、短訊或其他程式傳送你的位置
       </p>
       <p className="share-result" role="status" aria-live="polite">
-        {result === 'shared' && '✅ 已分享'}
-        {result === 'copied' && '✅ 已複製，可以貼上傳送'}
+        {result === 'shared' && <><Icon name="check" /> 已分享</>}
+        {result === 'copied' && <><Icon name="check" /> 已複製，可以貼上傳送</>}
       </p>
 
       {fallbackOpen && (
@@ -81,13 +82,13 @@ export function ShareButton({ fix, place, failed }: Props) {
           <div className="sheet__panel">
             <h2 id="sheet-title" className="sheet__title">傳送位置</h2>
             <a className="sheet__btn sheet__btn--wa" href={whatsappUrl(text)} target="_blank" rel="noopener">
-              <span aria-hidden="true">💬</span> WhatsApp
+              <Icon name="chat" /> WhatsApp
             </a>
             <a className="sheet__btn sheet__btn--sms" href={smsUrl(text)}>
-              <span aria-hidden="true">✉️</span> 短訊 SMS
+              <Icon name="mail" /> 短訊 SMS
             </a>
             <button type="button" className="sheet__btn" onClick={onCopy}>
-              <span aria-hidden="true">📋</span> 複製文字
+              <Icon name="copy" /> 複製文字
             </button>
             <pre className="sheet__preview" aria-label="將會傳送的內容">{text}</pre>
             <button type="button" className="sheet__close" onClick={() => setFallbackOpen(false)}>
