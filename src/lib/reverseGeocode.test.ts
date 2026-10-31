@@ -144,6 +144,14 @@ describe('Kam Sheung Road station exit D (real captures, ±2 m fix)', () => {
     expect(classifyName('大埔道公園')).toBe('estate');
   });
 
+  it('a clinic or a shop whose name contains an estate word is still a shop (max 50 m as the title)', () => {
+    expect(classifyName('卓滙醫務中心')).toBe('shop'); // 真實 searchNearby 項目
+    expect(classifyName('康怡廣場店')).toBe('shop');
+    expect(classifyName('新都城中心')).toBe('estate');
+    expect(classifyName('大興邨', 'B')).toBe('estate');
+    expect(pickTitle([c('卓滙醫務中心', 120)])).toBeUndefined();
+  });
+
   it('treats lifts and escalators as junk (they showed up as "附近還有：升降機")', () => {
     for (const n of ['升降機', '扶手電梯', '樓梯', '通道']) {
       expect(isTitleEligible(n), n).toBe(false);

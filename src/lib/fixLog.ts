@@ -2,7 +2,7 @@ import type { Fix } from './geo';
 
 /**
  * 原始定位紀錄（只存喺記憶體，最多 300 條），畀 ?debug=1 面板匯出 CSV。
- * 用途：喺已知位置（例如港鐵出口）行幾次，量度真實誤差，再決定融合 / 平滑做幾多。
+ * 用途：喺已知位置（例如港鐵出口）行幾次，量度真實誤差，再決定要唔要平滑（融合已試過，冇益，見 README）。
  */
 export interface FixSample extends Fix {
   /** 距離上一個 fix 嘅秒數 */

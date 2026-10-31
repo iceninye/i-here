@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DebugPanel } from './components/DebugPanel';
 import { Icon } from './components/Icon';
 import { InAppBanner } from './components/InAppBanner';
@@ -14,6 +14,19 @@ export default function App() {
   const [viewingShared, setViewingShared] = useState(!!shared);
   const loc = useCurrentLocation({ enabled: !viewingShared });
   const [is3D, setIs3D] = useState(false);
+  const bottomRef = useRef<HTMLElement>(null);
+
+  // 底欄高度（隨字體大小 / 提示 / 安全區變）量度後放入 --bottom-h：
+  // 地圖版權（© 地政總署）同「回到我的位置」掣要企喺底欄上面，唔可以被佢遮住
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const apply = () => document.documentElement.style.setProperty('--bottom-h', `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const debug = useMemo(() => new URLSearchParams(location.search).has('debug'), []);
 
   const backToMe = () => {
@@ -41,7 +54,7 @@ export default function App() {
         {debug && <DebugPanel loc={loc} />}
       </header>
 
-      <footer className="bottom">
+      <footer className="bottom" ref={bottomRef}>
         {viewingShared ? (
           <button type="button" className="share-btn share-btn--secondary" onClick={backToMe}>
             <Icon name="pin" /> 看看我自己的位置
