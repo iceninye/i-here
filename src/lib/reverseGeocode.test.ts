@@ -138,7 +138,18 @@ describe('Kam Sheung Road station exit D (real captures, ±2 m fix)', () => {
     expect(classifyName('柏瓏', 'S')).toBe('estate');
     expect(classifyName('7-11便利店-元朗')).toBe('shop');
     expect(classifyName('天福路', 'ST')).toBe('street');
-    expect(classifyName('興輝樓', 'B')).toBe('estate');
+    expect(classifyName('興輝樓', 'B')).toBe('building');
+    expect(classifyName('興輝樓')).toBe('building');
+    expect(classifyName('大興邨', 'B')).toBe('estate');
+    expect(classifyName('大埔道公園')).toBe('estate');
+  });
+
+  it('treats lifts and escalators as junk (they showed up as "附近還有：升降機")', () => {
+    for (const n of ['升降機', '扶手電梯', '樓梯', '通道']) {
+      expect(isTitleEligible(n), n).toBe(false);
+    }
+    expect(pickLandmarks([c('興輝樓', 0, 'building'), c('升降機', 70), c('OK便利店', 45, 'shop')], c('興輝樓', 0, 'building'))
+      .map(x => x.name)).toEqual(['OK便利店']);
   });
 
   it('parseNearby drops the street-named parking records and street-kind items, keeps exits and shops', () => {

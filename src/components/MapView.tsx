@@ -3,6 +3,7 @@ import maplibregl, { type GeoJSONSource, type Map as MlMap, type StyleSpecificat
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BUILDINGS_3D, LANDSD_3DTILES_URL, LANDSD_TILES } from '../config';
 import { circlePolygon, type Fix } from '../lib/geo';
+import { Icon } from './Icon';
 
 interface Props {
   fix: Fix | null;
@@ -162,7 +163,7 @@ export function MapView({ fix, is3D, sharedPin }: Props) {
       <div ref={container} className="map" role="img" aria-label="地圖，藍色「我」標記係你而家嘅位置" />
       {!following && fix && (
         <button type="button" className="recenter-btn" onClick={recenter}>
-          <span aria-hidden="true">◎</span> 回到我的位置
+          <Icon name="target" /> 回到我的位置
         </button>
       )}
     </div>

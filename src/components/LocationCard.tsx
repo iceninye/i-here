@@ -1,5 +1,6 @@
 import type { CurrentLocation } from '../hooks/useCurrentLocation';
 import { placeHeadline } from '../lib/shareText';
+import { Icon } from './Icon';
 
 function accuracyLabel(acc: number): { text: string; level: 'good' | 'ok' | 'poor' } {
   if (!Number.isFinite(acc)) return { text: '準確度未知', level: 'poor' };
@@ -52,7 +53,7 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
               <p>請允許這個網頁使用你的位置：</p>
               <ul>
                 <li><b>iPhone：</b>設定 → 私隱與保安 → 定位服務 → Safari → 「使用 App 期間」</li>
-                <li><b>Android：</b>按網址列左邊的 🔒 → 權限 → 位置 → 允許</li>
+                <li><b>Android：</b>按網址列左邊的 <Icon name="lock" /> → 權限 → 位置 → 允許</li>
               </ul>
               <p>然後按下面的「重新定位」。</p>
             </div>
@@ -85,7 +86,7 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
           {error?.code === 'outside-hk' && <p className="card__sub">{ERROR_TEXT['outside-hk']}，未能顯示香港地址。</p>}
           {acc && (
             <p className={`badge badge--${acc.level}`}>
-              <span aria-hidden="true">{acc.level === 'poor' ? '⚠️' : '📶'}</span> {acc.text}
+              <Icon name={acc.level === 'poor' ? 'alert' : 'signal'} /> {acc.text}
             </p>
           )}
           {loc.poorAccuracy && <p className="card__hint">位置可能有偏差：請走到較空曠的地方，再按「重新定位」。</p>}
