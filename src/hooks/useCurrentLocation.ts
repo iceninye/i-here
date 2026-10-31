@@ -74,7 +74,7 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
       if (api && !ctrl.signal.aborted) setHk80(api);
     });
     try {
-      const resolved = await reverseGeocode(p80, { lat: f.lat, lng: f.lng }, ctrl.signal, partial => {
+      const resolved = await reverseGeocode(p80, { lat: f.lat, lng: f.lng, accuracy: f.accuracy }, ctrl.signal, partial => {
         // 地名一到就顯示；ALS 補全地址之後再更新
         if (ctrl.signal.aborted) return;
         setPlace(partial);

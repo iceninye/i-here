@@ -314,15 +314,33 @@ export function parseNominatim(json: unknown, origin: Origin): PlaceCandidate | 
 
 /* ---------------- 組合 ---------------- */
 
-/** 25 m 內當「就喺呢度」，否則「附近」 */
+/**
+ * 「就喺呢度 / 附近」門檻 —— 用實際距離同定位準確度，唔再靠 API 嘅 nearBool（後者成日錯）。
+ * 準確度好（≤ 門檻）：門檻內都算「喺」。
+ * 準確度差：按比例收細「喺」嘅範圍（最少 5 m），寧願講「附近」都唔好亂認「喺」。
+ */
 const AT_THRESHOLD_M = 25;
+
+export function proximityFor(dist: number, accuracy = AT_THRESHOLD_M): 'at' | 'near' {
+  if (!Number.isFinite(dist)) return 'near';
+  const atLimit = accuracy <= AT_THRESHOLD_M
+    ? AT_THRESHOLD_M
+    : Math.max(5, (AT_THRESHOLD_M * AT_THRESHOLD_M) / accuracy);
+  return dist <= atLimit ? 'at' : 'near';
+}
+
 /** 每個來源最多等幾耐。 */
 const SOURCE_TIMEOUT_MS = 5000;
 
-function toPlace(c: PlaceCandidate, source: PlaceSource, landmarks: PlaceCandidate[]): ResolvedPlace {
+function toPlace(
+  c: PlaceCandidate,
+  source: PlaceSource,
+  landmarks: PlaceCandidate[],
+  accuracy = AT_THRESHOLD_M,
+): ResolvedPlace {
   return {
     name: c.name,
-    proximity: c.distanceM <= AT_THRESHOLD_M ? 'at' : 'near',
+    proximity: proximityFor(c.distanceM, accuracy),
     distanceM: c.distanceM,
     kind: c.kind,
     address: c.address,
@@ -391,11 +409,12 @@ async function lookupAls(title: PlaceCandidate, p: HK80Point, signal?: AbortSign
  */
 export async function reverseGeocode(
   p: HK80Point,
-  at: { lat: number; lng: number },
+  at: { lat: number; lng: number; accuracy?: number },
   signal?: AbortSignal,
   onPartial?: (place: ResolvedPlace) => void,
 ): Promise<ResolvedPlace | null> {
   const origin: Origin = { x: p.x, y: p.y, lat: at.lat, lng: at.lng };
+  const acc = at.accuracy ?? AT_THRESHOLD_M;
   const qs = `x=${Math.round(p.x)}&y=${Math.round(p.y)}&lang=zh`;
 
   const identifyP = tryParse(`${ENDPOINTS.identify}?${qs}`, 'identify', j => parseIdentify(j, origin), signal);
@@ -407,7 +426,7 @@ export async function reverseGeocode(
 
   // identify 一回就先顯示（~1 s）；之後 searchNearby 一回再比較一次，更貼身嘅（例如 23 米外嘅車站出口
   // 勝過 79 米外嘅屋苑）會取代佢
-  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title)));
+  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title), acc));
   const first = title;
 
   const nearby = await nearbyP;
@@ -415,12 +434,12 @@ export async function reverseGeocode(
   if (best) {
     title = best;
     source = identified.includes(best) ? 'identify' : 'nearby';
-    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best)));
+    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best), acc));
   }
 
   if (!title && OSM_FALLBACK) {
     const osm = await tryOsm(origin, signal);
-    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [])); }
+    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [], acc)); }
   }
   if (!title) return null;
 
@@ -428,7 +447,7 @@ export async function reverseGeocode(
   // 街名唔使查 ALS：實測 ALS 對「天福路」會回沙田嘅結果，只會白白多一個請求
   const address = chosen.kind === 'street' ? undefined : await lookupAls(chosen, p, signal);
   return {
-    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen)),
+    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen), acc),
     address: address ?? chosen.address,
   };
 }

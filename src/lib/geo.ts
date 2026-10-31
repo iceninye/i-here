@@ -55,6 +55,48 @@ export function geoErrorFrom(err: GeolocationPositionError | { code: number; mes
   return new GeoError('unavailable', err.message);
 }
 
+/**
+ * 反變差加權融合 —— 將取樣窗內多個 fix 合成一個更準嘅位置。
+ * 權重 = 1/accuracy²（越準嘅 fix 話語權越大）。融合後嘅精度取
+ * min(1/√Σw, 最準單獨 fix)：統計上唔會好過最好嗰個觀測，但通常更穩定。
+ * 全部座標只喺本機計算，唔會上傳。
+ */
+export function fuseFixes(fixes: Fix[]): Fix | null {
+  const valid = fixes.filter(f => Number.isFinite(f.accuracy) && f.accuracy > 0);
+  if (valid.length === 0) return null;
+  if (valid.length === 1) return valid[0];
+
+  let sumW = 0;
+  let wLat = 0;
+  let wLng = 0;
+  let ts = 0;
+  let best = Infinity;
+  for (const f of valid) {
+    const w = 1 / (f.accuracy * f.accuracy);
+    sumW += w;
+    wLat += w * f.lat;
+    wLng += w * f.lng;
+    if (f.timestamp > ts) ts = f.timestamp;
+    if (f.accuracy < best) best = f.accuracy;
+  }
+  const accuracy = Math.max(1, Math.min(1 / Math.sqrt(sumW), best));
+  return { lat: wLat / sumW, lng: wLng / sumW, accuracy, timestamp: ts };
+}
+
+/**
+ * 剔除離群 fix —— 距離臨時融合中心太遠（> 2.5× 最準精度，最少 60m）就丟走，
+ * 避免一個漂移嘅基站/Wi-Fi 估算污染融合結果。少於 3 個樣本唔做（無從判斷）。
+ */
+export function rejectOutliers(fixes: Fix[]): Fix[] {
+  if (fixes.length < 3) return fixes;
+  const centre = fuseFixes(fixes);
+  if (!centre) return fixes;
+  const best = Math.min(...fixes.map(f => f.accuracy));
+  const limit = Math.max(2.5 * best, 60);
+  const kept = fixes.filter(f => haversineM(f.lat, f.lng, centre.lat, centre.lng) <= limit);
+  return kept.length >= 1 ? kept : fixes;
+}
+
 export interface AcquireOptions {
   maxAgeMs?: number;
   windowMs?: number;
@@ -79,6 +121,7 @@ export function acquireBestFix(opts: AcquireOptions = {}): Promise<Fix> {
   return new Promise<Fix>((resolve, reject) => {
     if (!geo) return reject(new GeoError('unsupported'));
     let best: Fix | null = null;
+    const samples: Fix[] = [];
     let done = false;
     let watchId: number | null = null;
 
@@ -88,7 +131,9 @@ export function acquireBestFix(opts: AcquireOptions = {}): Promise<Fix> {
       if (watchId !== null) geo.clearWatch(watchId);
       clearTimeout(timer);
       opts.signal?.removeEventListener('abort', onAbort);
-      if (best) resolve(best);
+      // 融合所有合法樣本（先剔離群）；得返一個 / 冇樣本時退回最準嗰個
+      const result = fuseFixes(rejectOutliers(samples)) ?? best;
+      if (result) resolve(result);
       else reject(err ?? new GeoError('timeout'));
     };
     const onAbort = () => finish(new GeoError('timeout', 'aborted'));
@@ -98,6 +143,7 @@ export function acquireBestFix(opts: AcquireOptions = {}): Promise<Fix> {
         const fix = toFix(pos);
         if (!fix) return;
         opts.onSample?.(fix);
+        samples.push(fix);
         if (!best || fix.accuracy < best.accuracy) {
           best = fix;
           opts.onFix?.(fix);
