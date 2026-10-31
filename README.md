@@ -33,15 +33,15 @@ GPS (WGS84)
   │ ① 取樣窗：watchPosition 8 秒內收集多個 fix，保留最準；≤30 m 即刻停（移植自 mtr-app）
   │    每個更準嘅 fix 即時更新地圖（唔使等成個取樣窗）
   ▼
-HK80：本機 proj4（EPSG:2326，誤差 ~1 m）即刻計；地政總署坐標轉換 API 喺背景核對
-  │   （實測手機上呢個 API 可以 3 秒都未回應，所以唔等佢）
+HK80：本機 proj4（EPSG:2326，誤差 ~1 m）即刻計；地政總署坐標轉換 API（www.geodetic.gov.hk）喺背景核對，唔阻住查地址
+  │   （舊網址 geodetic.landsd.gov.hk 永遠冇回應；回應 key 未驗證，用 ?debug=1 睇）
   ▼
-identify（www.map.gov.hk，~0.7 s）→ 你所在嘅大廈 / 屋苑 / 車站；一回就顯示
+identify（www.map.gov.hk，~0.2–1.4 s）→ 你所在嘅大廈 / 屋苑 / 車站，或者街道（街道冇座標，當作就喺查詢點；路口會有幾條）；一回就顯示
 searchNearby（同一 host）→ 1 km 內設施。回應冇距離上限，而且大部分係 WiFi 熱點、郵箱、路旁泊車位、
                            停車場、AED，所以只用嚟做「附近還有」，並經黑名單 + 分類 + 距離篩選
   ▼   標題分數 = 距離 + 類別罰分（大廈 / 屋苑 0 < 車站 20 < 店舖 40 < 設施 60 < 街道 130）
   ▼
-ALS 門牌地址搜尋（用地名查）→ 揀 250 m 內最近嗰個 → 補官方中文地址（地名已經先顯示咗）
+ALS 門牌地址搜尋（用地名查；街名唔查，因為 ALS 對「天福路」會回沙田嘅結果）→ 揀 250 m 內最近嗰個 → 補官方中文地址（地名已經先顯示咗）
   ▼
 「你現在位於：興輝樓附近」＋ 地址 ＋ 附近還有：大興街市（95 米）…
 ```
@@ -138,9 +138,10 @@ wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
 
 ## ⚠️ 已知限制 / 待驗證
 
-- `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-kam-sheung-road.json`，節錄版）。
+- `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-*.json`：錦上路站、天水圍站（節錄版），天福路、宏達路（完整））。
+- `ALS` 只見到英文地址部分（`als-street-query.json`，節錄版）；中文地址欄位 `ChiPremisesAddress` 仲未見過真實回應。
 - `searchNearby` 同 `ALS` 仲未有完整真實 fixture：`searchNearby` 嘅 parser 只收「陣列 + 明確 key」。用 `?debug=1` → 「原始回應：searchNearby」可以錄低完整回應，換入測試。
-- **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
+- **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」（第一行 `build:` 係版本，手機有時會跑緊舊快取，貼紀錄時請連埋呢行）：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
 - 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片）：開立體圖時會向 OpenFreeMap 要圖磚，等於將畫面範圍告訴佢；之後會改用自己託管嘅資料。
 - 北區同深圳交界一帶，經緯度範圍檢查無可避免會重疊；嗰度 identify 搵唔到大廈就只顯示座標。
 

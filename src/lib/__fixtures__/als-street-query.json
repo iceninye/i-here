@@ -1,0 +1,21 @@
+{
+  "_fixture": "Abridged from a real www.als.gov.hk lookup response (q=天福路 ST, n=5) captured on a phone. The capture was cut off after the first suggestion's GeospatialInformation and the start of the second; only the first suggestion is kept. Note the English-only fields in the part that was captured; the Chinese address block was not visible.",
+  "RequestAddress": { "AddressLine": ["天福路 ST"] },
+  "SuggestedAddress": [
+    {
+      "Address": {
+        "PremisesAddress": {
+          "EngPremisesAddress": {
+            "BuildingName": "ST FRANCIS HOUSE",
+            "EngStreet": { "LocationName": "SHA TIN", "StreetName": "TO FUNG SHAN ROAD", "BuildingNoFrom": "60" },
+            "EngDistrict": { "DcDistrict": "SHA TIN DISTRICT" },
+            "Region": "NT"
+          },
+          "GeoAddress": "3641027547T20060210",
+          "GeospatialInformation": { "Northing": "827547", "Easting": "836410", "Latitude": "22.38716", "Longitude": "114.17825" }
+        }
+      },
+      "ValidationInformation": { "Score": 50.0 }
+    }
+  ]
+}

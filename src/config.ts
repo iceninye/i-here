@@ -13,7 +13,7 @@
 
 export const ENDPOINTS = {
   /** WGS84 經緯度 -> HK1980 方格網 (inSys=wgsgeog, outSys=hkgrid) */
-  transform: 'https://www.geodetic.landsd.gov.hk/transform/v2/',
+  transform: 'https://www.geodetic.gov.hk/transform/v2/',
   /** 以 HK80 座標識別該點嘅建築物 / 街道 */
   identify: 'https://www.map.gov.hk/gs/api/v1.0.0/identify',
   /** 1 km 內嘅設施（回應冇距離上限，要自己篩） */

@@ -10,6 +10,7 @@ export function DebugPanel({ loc }: { loc: CurrentLocation }) {
   const log = useSyncExternalStore(subscribeApiLog, getApiLog);
   const fixes = useSyncExternalStore(subscribeFixLog, getFixLog);
   const summary = [
+    `build: ${__BUILD_ID__}`,
     `fix: ${loc.fix ? `${loc.fix.lat.toFixed(6)}, ${loc.fix.lng.toFixed(6)} ±${Math.round(loc.fix.accuracy)}m` : '-'}`,
     `hk80: ${loc.hk80 ? `${loc.hk80.x.toFixed(1)}, ${loc.hk80.y.toFixed(1)} (${loc.hk80.source})` : '-'}`,
     `place: ${loc.placeStatus}${loc.place ? ` · ${loc.place.name} · ${loc.place.kind} · ${loc.place.source}` : ''}`,
