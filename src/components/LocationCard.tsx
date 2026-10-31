@@ -1,5 +1,4 @@
 import type { CurrentLocation } from '../hooks/useCurrentLocation';
-import { GEO } from '../lib/geo';
 import { placeHeadline } from '../lib/shareText';
 
 function accuracyLabel(acc: number): { text: string; level: 'good' | 'ok' | 'poor' } {
