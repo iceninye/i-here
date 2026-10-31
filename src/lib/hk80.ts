@@ -1,5 +1,5 @@
 import proj4 from 'proj4';
-import { ENDPOINTS, apiUrl } from '../config';
+import { ENDPOINTS } from '../config';
 import { fetchJson } from './fetchJson';
 
 /** HK1980 Grid (EPSG:2326)，7 參數轉換。離線後備精度約 1–2 m，足夠搵附近大廈。 */
@@ -45,7 +45,7 @@ export function parseTransformResponse(json: unknown): { x: number; y: number } 
 export async function wgs84ToHK80Api(lat: number, lng: number, signal?: AbortSignal): Promise<HK80Point | null> {
   const url = `${ENDPOINTS.transform}?inSys=wgsgeog&outSys=hkgrid&lat=${lat.toFixed(7)}&long=${lng.toFixed(7)}`;
   try {
-    const p = parseTransformResponse(await fetchJson(apiUrl(url), { timeoutMs: 5000, signal, name: '坐標轉換' }));
+    const p = parseTransformResponse(await fetchJson(url, { timeoutMs: 5000, signal, name: '坐標轉換' }));
     return p ? { ...p, source: 'landsd-api' } : null;
   } catch {
     return null;

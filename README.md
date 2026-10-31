@@ -1,8 +1,8 @@
 # 📍 我在哪裡 · i-here
 
-**一打開就知道自己身處何方，一鍵分享位置給家人。**
+**一打開就知道自己身處何方，一鍵分享位置。**
 
-好多時屋企人（尤其係長者）喺街上會唔知自己喺邊。i-here 打開即定位，用**大字**顯示「你現在位於：興輝樓附近」同官方門牌地址，再撳一個**大綠色掣**就可以用 WhatsApp / 短訊 / Telegram 將精準位置傳俾家人。
+好多時喺街上會唔知自己喺邊（長者、遊客、迷路嘅人都一樣）。i-here 打開即定位，用**大字**顯示「你現在位於：興輝樓附近」同官方門牌地址，再撳一個**大綠色掣**就可以用 WhatsApp / 短訊 / Telegram 將精準位置傳俾朋友或家人。大字、高對比、少術語係預設，任何人都適用。
 
 數據來自香港地政總署（LandsD）同 OGCIO 開放數據；定位技術沿用並改良自 [mtr-app](https://github.com/iceninye/mtr-app)。
 
@@ -36,9 +36,10 @@ GPS (WGS84)
 HK80：本機 proj4（EPSG:2326，誤差 ~1 m）即刻計；地政總署坐標轉換 API 喺背景核對
   │   （實測手機上呢個 API 可以 3 秒都未回應，所以唔等佢）
   ▼
-identify（www.map.gov.hk + geodata.gov.hk 鏡像）┐
-searchNearby（1 km 內設施）                      ├ 全部並行，每個最多 5 秒
-OpenStreetMap Nominatim                          ┘ OSM 一到（~0.3 s）先顯示，政府 API 答咗再換官方地名
+identify（www.map.gov.hk，~0.7 s）→ 你所在嘅大廈 / 屋苑 / 車站；一回就顯示
+searchNearby（同一 host）→ 1 km 內設施。回應冇距離上限，而且大部分係 WiFi 熱點、郵箱、路旁泊車位、
+                           停車場、AED，所以只用嚟做「附近還有」，並經黑名單 + 分類 + 距離篩選
+  ▼   標題分數 = 距離 + 類別罰分（大廈 / 屋苑 0 < 車站 20 < 店舖 40 < 設施 60 < 街道 130）
   ▼
 ALS 門牌地址搜尋（用地名查）→ 揀 250 m 內最近嗰個 → 補官方中文地址（地名已經先顯示咗）
   ▼
@@ -73,47 +74,39 @@ Google 地圖：https://www.google.com/maps/search/?api=1&query=22.408010,113.97
 地圖（i-here）：https://iceninye.github.io/i-here/?at=22.408010,113.973120&n=興輝樓附近
 ```
 
-收件人撳 i-here 連結會見到地政總署地圖上嘅紅色「家人」標記，同一個「用 Google 地圖導航前往」掣；**唔會即刻彈定位權限**嚇親人，要自己撳「看看我自己的位置」先定位。
+收件人撳 i-here 連結會見到地政總署地圖上嘅紅色「對方」標記，同一個「用 Google 地圖導航前往」掣；**唔會即刻彈定位權限**，要自己撳「看看我自己的位置」先定位。
 
 ## 4. UI / UX：慌亂中都一眼睇得明
 
 - **一個畫面、一個主要動作**：上面係位置卡，中間係地圖，下面係成個闊度、80 px 高嘅綠色「分享我的位置」。
 - **大字**：地名 28–38 px 粗體，地址 20 px；全部用 `rem`，跟手機「字體大小」設定放大。
 - **用說話，唔用術語**：「很準確（約 18 米內）」而唔係「±18 m」；冇「HK80」「座標」呢啲字眼。
-- **標記有字**：藍色「我」、紅色「家人」，唔使識睇藍點。
+- **標記有字**：藍色「我」、紅色「對方」，唔使識睇藍點。
 - **防誤觸**：停用地圖旋轉；拖動地圖後出現「回到我的位置」，唔會自己飛走。
 - **出錯都有路行**：權限被拒時直接教 iPhone / Android 點開；冇地址時講明「仍然可以分享」。
-- **無障礙**：位置卡 `aria-live` 會被讀屏器讀出；按鈕有文字（emoji 設 `aria-hidden`）；焦點框 4 px 黃色；`prefers-reduced-motion` 停動畫；觸控目標 ≥ 56 px。
+- **無障礙**：只有一行隱藏嘅 `role=status` 會被讀屏器讀出（唔會成張卡反覆讀）；按鈕有文字（emoji 設 `aria-hidden`）；焦點框 4 px 黃色；`prefers-reduced-motion` 停動畫；觸控目標 ≥ 56 px。
 
 ## 5. CORS 與部署注意事項
 
 ### 跨域（CORS）
 
-| API | 瀏覽器直接 call | 備註 |
-|---|---|---|
-| 地圖瓦片 `mapapi.geodata.gov.hk` | ✅ 一般得 | `<img>`/WebGL 載入，地政總署瓦片有 CORS header |
-| identify `www.map.gov.hk` / searchNearby `geodata.gov.hk` | ⚠️ 未實測 | 失敗會自動試鏡像，再退 OpenStreetMap |
-| ALS `www.als.gov.hk` | ⚠️ | 要加 `Accept: application/json`，否則回 XML |
-| 坐標轉換 `geodetic.landsd.gov.hk` | ⚠️ | 失敗時 App 自動用本機 proj4，唔影響功能 |
+實測（手機）：`www.map.gov.hk`（identify / searchNearby）同 ALS 都回 `Access-Control-Allow-Origin: *`，**毋須 CORS 代理**。
+`geodata.gov.hk/gs/api/*` 嘅請求一直冇回應，已經唔再使用。坐標轉換 API 有時好慢，所以只喺背景核對。
 
 **最佳做法**：
 
-1. **App 本身已經容錯**：每個 API 都有 timeout、`AbortController`、後備路徑（proj4 / 只顯示座標），API 全部失敗都照樣可以分享位置。
-2. **遇到 CORS 就開代理**：`worker/` 係一個 Cloudflare Worker（mtr-app 已經用緊 Cloudflare）：
-   - 只准 3 個政府 host（**唔係 open proxy**）、只准 `GET`、Origin 白名單。
-   - Edge cache 24 小時（地址唔會分鐘級改變），減少政府 API 負荷同限流風險。
-   - 部署：`cd worker && npx wrangler deploy`，然後設定 `VITE_API_PROXY`。
-3. **唔好用公共 CORS proxy**（cors-anywhere 之類）：位置係敏感資料，唔應該經第三方。
-4. **HTTPS 必須**：Geolocation 同 Web Share API 只喺 HTTPS / `localhost` 用得。GitHub Pages、Vercel、Cloudflare 都預設 HTTPS。
-5. **Rate limit**：只喺移動 > 40 m 先重新查地址；Worker cache 再擋一層。
-6. **PWA / Service Worker**：如果之後加 SW，**唔好 cache 定位 API 回應**（會顯示舊地址），只 cache app shell 同地圖瓦片（`StaleWhileRevalidate`，設上限）。
-7. **Base path**：`vite.config.ts` 用 `base: './'`，同一份 build 放 GitHub Pages（`/i-here/`）或根目錄都得。
+1. **每個 API 都有 timeout、`AbortController` 同後備**：政府 API 全部失敗，都只係顯示座標，仍然可以分享位置。
+2. **預設唔將座標送去第三方**（OpenStreetMap 後備要 build 時設 `VITE_OSM_FALLBACK=1` 先開）。
+3. **HTTPS 必須**：Geolocation 同 Web Share API 只喺 HTTPS / `localhost` 用得。
+4. **Rate limit**：只喺移動 > 40 m 先重新查地址。
+5. **唔加 Service Worker**：避免 cache 舊地址 / 舊位置。
+6. **Base path**：`vite.config.ts` 用 `base: './'`，同一份 build 放 GitHub Pages（`/i-here/`）或根目錄都得。
 
 ### 部署
 
 - **GitHub Pages**：push 去 `main` 自動 build + 部署（`.github/workflows/deploy.yml`）。第一次要喺 repo **Settings → Pages → Source** 揀 **GitHub Actions**。
 - **Cloudflare Workers Builds**：根目錄 `wrangler.jsonc` 會先跑 `npm run build`，再將 `dist/` 當靜態資源部署（同 mtr-app 一樣冇 Worker script）。
-- 可選 Actions variables：`VITE_API_PROXY`、`VITE_LANDSD_3DTILES_URL`（見 `.env.example`）。
+- 可選 Actions variables：`VITE_OSM_FALLBACK`、`VITE_LANDSD_3DTILES_URL`（見 `.env.example`）。
 - PR 會自動跑測試同 build（`.github/workflows/ci.yml`）。
 
 ## 🛠️ 本機開發
@@ -141,21 +134,21 @@ src/
   components/MapView.tsx        MapLibre 地圖、精度圈、2D / 3D
   components/landsd3dTiles.ts   地政總署 3D Tiles（lazy）
 wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
-worker/                         可選 CORS 代理（Cloudflare Worker）
 ```
 
 ## ⚠️ 已知限制 / 待驗證
 
-- 開發環境網絡封鎖咗 `*.gov.hk`，**identify / searchNearby / ALS / 坐標轉換 API 嘅回應格式未對真實 API 實測**（官方文件冇公開 response schema）。解析器好寬鬆：遞迴搵任何「似地方名」嘅欄位（中文優先），有座標就計距離。
-- **排查方法**：網址加 `?debug=1`（例如 `https://iceninye.github.io/i-here/?debug=1`），位置卡下面會出「診斷資料」，顯示每個 API 嘅狀態（`TypeError` 多數係 CORS）同回應頭 600 字，可以一鍵複製。
-- 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片），香港覆蓋率高但唔係官方。地政總署「3D 建築物外廓」係下載檔（非瓦片 API），之後可以預先轉成 PMTiles 放 repo 取代。
-- 地政總署 3D Tiles 嘅高度係真實海拔，MapLibre 冇開地形時山上嘅建築物會「浮起」；屬可選功能。
+- `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-kam-sheung-road.json`，節錄版）。
+- `searchNearby` 同 `ALS` 仲未有完整真實 fixture：`searchNearby` 嘅 parser 只收「陣列 + 明確 key」。用 `?debug=1` → 「原始回應：searchNearby」可以錄低完整回應，換入測試。
+- **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
+- 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片）：開立體圖時會向 OpenFreeMap 要圖磚，等於將畫面範圍告訴佢；之後會改用自己託管嘅資料。
 - 北區同深圳交界一帶，經緯度範圍檢查無可避免會重疊；嗰度 identify 搵唔到大廈就只顯示座標。
 
 ## 🔒 私隱
 
 - 冇後端、冇帳戶、冇 cookies、冇追蹤。
-- 位置只會送去政府 API（或你自己部署嘅 Worker）用嚟查地址；只有你撳「分享」先會傳俾你揀嘅人。
+- 位置只會送去政府 API（identify、searchNearby、ALS，同埋地政總署地圖瓦片）用嚟查地址 / 顯示地圖；只有你撳「分享」先會傳俾你揀嘅人。
+- 例外：開「立體圖」會向 OpenFreeMap 要建築物圖磚（只含畫面範圍）。
 
 ---
 

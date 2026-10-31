@@ -12,7 +12,11 @@ export interface ApiLogEntry {
   ms: number;
   /** 回應頭 600 字 */
   snippet: string;
+  /** 完整回應（只喺 ?debug=1 先保留），用嚟複製做測試 fixture */
+  body?: string;
 }
+
+export const DEBUG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
 let entries: readonly ApiLogEntry[] = [];
 const listeners = new Set<() => void>();

@@ -61,6 +61,8 @@ export interface AcquireOptions {
   goodAccuracyM?: number;
   /** 每當有更準嘅 fix 就 call（包括第一個） */
   onFix?: (fix: Fix) => void;
+  /** 每個合法 fix 都 call（包括冇更準嘅），畀量度用 */
+  onSample?: (fix: Fix) => void;
   signal?: AbortSignal;
   geolocation?: Geolocation;
 }
@@ -95,6 +97,7 @@ export function acquireBestFix(opts: AcquireOptions = {}): Promise<Fix> {
       pos => {
         const fix = toFix(pos);
         if (!fix) return;
+        opts.onSample?.(fix);
         if (!best || fix.accuracy < best.accuracy) {
           best = fix;
           opts.onFix?.(fix);

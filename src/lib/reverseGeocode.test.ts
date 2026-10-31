@@ -1,49 +1,94 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { extractCandidates, formatAlsChinese, parseNominatim, pickAlsAddress, reverseGeocode } from './reverseGeocode';
+import identifyKamSheung from './__fixtures__/identify-kam-sheung-road.json';
+import nominatimKamSheung from './__fixtures__/nominatim-kam-sheung-road.json';
+import {
+  classifyName, formatAlsChinese, isTitleEligible, parseIdentify, parseNearby, parseNominatim,
+  pickAlsAddress, pickLandmarks, pickTitle, reverseGeocode, type PlaceCandidate,
+} from './reverseGeocode';
 
+/** 實測位置：錦上路站附近（手機 debug 面板錄到） */
+const kam = { x: 824647.8, y: 832746.0, lat: 22.434066, lng: 114.063997 };
 const origin = { x: 816500, y: 825700, lat: 22.40801, lng: 113.97312 };
+const c = (name: string, distanceM: number, kind?: PlaceCandidate['kind']): PlaceCandidate =>
+  ({ name, distanceM, kind: kind ?? classifyName(name) });
 
-describe('extractCandidates', () => {
-  it('finds nested named points and sorts by distance', () => {
-    const json = {
-      results: [
-        { layer: 'building', addressInfo: [{ nameZH: '興輝樓', addressZH: '屯門大興邨', x: 816510, y: 825705 }] },
-        { layer: 'facility', addressInfo: [{ cname: '大興體育館', x: '816600', y: '825750' }] },
-        { addressInfo: [{ nameZH: '興輝樓', x: 816510, y: 825705 }] }, // duplicate
-      ],
-    };
-    const c = extractCandidates(json, origin);
-    expect(c.map(v => v.name)).toEqual(['興輝樓', '大興體育館']);
-    expect(c[0].address).toBe('屯門大興邨');
-    expect(c[0].distanceM).toBeCloseTo(Math.hypot(10, 5));
+describe('parseIdentify (real captured response)', () => {
+  it('reads the building from results[].addressInfo[] and ignores the nested facilities', () => {
+    const list = parseIdentify(identifyKamSheung, kam);
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe('錦上路站');
+    expect(list[0].kind).toBe('transport');
+    expect(list[0].distanceM).toBeCloseTo(Math.hypot(824588 - kam.x, 832830 - kam.y), 1);
+    expect(list[0].distanceM).toBeGreaterThan(100); // ~103 m：「附近」而唔係「就喺度」
   });
-  it('keeps names without coordinates (identify may omit them), after the located ones', () => {
-    const c = extractCandidates([{ nameZH: '無座標' }, { nameZH: '有座標', x: 816500, y: 825700 }], origin);
-    expect(c.map(v => v.name)).toEqual(['有座標', '無座標']);
-    expect(Number.isNaN(c[1].distanceM)).toBe(true);
+  it('falls back to the English name, and survives garbage', () => {
+    const j = { results: [{ addressInfo: [{ ename: 'Hing Yiu House', addressType: 'B', x: 816510, y: 825705 }] }] };
+    expect(parseIdentify(j, origin)[0]).toMatchObject({ name: 'Hing Yiu House', kind: 'building' });
+    expect(parseIdentify({}, origin)).toEqual([]);
+    expect(parseIdentify(null, origin)).toEqual([]);
+    expect(parseIdentify({ results: [{ addressInfo: [null, 5, { cname: null }] }] }, origin)).toEqual([]);
   });
-  it('accepts unknown name keys, prefers Chinese, ignores layer names and lat/lng coordinates', () => {
-    const c = extractCandidates(
-      { features: [{ layerName: 'BUILDING', buildingNameEN: 'Hing Yiu House', buildingNameTC: '興耀樓', lat: 22.40801, long: 113.97312 }] },
-      origin,
-    );
-    expect(c).toHaveLength(1);
-    expect(c[0].name).toBe('興耀樓');
-    expect(c[0].distanceM).toBeCloseTo(0);
+  it('does not pick up status-like fields as names (nameStatus used to be matched)', () => {
+    const j = { results: [{ addressInfo: [{ cname: null, ename: null, nameStatus: 'ACTIVE', x: 816500, y: 825700 }] }] };
+    expect(parseIdentify(j, origin)).toEqual([]);
   });
-  it('handles empty input', () => {
-    expect(extractCandidates({}, origin)).toEqual([]);
-    expect(extractCandidates(null, origin)).toEqual([]);
+});
+
+describe('title ranking and blacklist', () => {
+  it('never uses WiFi hotspots, post boxes, kerb parking, car parks, AED, toilets as the title', () => {
+    for (const n of ['WiFi.HK 熱點', '郵箱 PB1234', '路旁泊車位', '錦田公眾停車場', '自動心臟除顫器 - 錦上路站', '公廁', '免費Wi-Fi']) {
+      expect(isTitleEligible(n), n).toBe(false);
+    }
+    expect(isTitleEligible('興輝樓')).toBe(true);
+  });
+
+  it('returns no title when only junk is nearby (UI then shows coordinates only)', () => {
+    expect(pickTitle([c('WiFi.HK 熱點', 3), c('郵箱 PB1', 5), c('路旁泊車位', 8), c('公眾停車場', 12)])).toBeUndefined();
+  });
+
+  it('prefers the building you are in over a nearby shop, but a very close shop beats a far building', () => {
+    expect(pickTitle([c('某某餐廳', 10, 'shop'), c('興輝樓', 40, 'building')])?.name).toBe('興輝樓');
+    expect(pickTitle([c('某某餐廳', 5, 'shop'), c('興輝樓', 60, 'building')])?.name).toBe('某某餐廳');
+  });
+
+  it('applies per-kind distance caps (a shop 80 m away is not "where you are")', () => {
+    expect(pickTitle([c('某某餐廳', 80, 'shop')])).toBeUndefined();
+    expect(pickTitle([c('興輝樓', 200, 'building')])?.name).toBe('興輝樓');
+    expect(pickTitle([c('興輝樓', 400, 'building')])).toBeUndefined();
+  });
+
+  it('falls back to a street only when nothing better exists', () => {
+    expect(pickTitle([c('青田路', 20, 'street'), c('錦上路站', 100, 'transport')])?.name).toBe('錦上路站');
+    expect(pickTitle([c('青田路', 20, 'street')])?.name).toBe('青田路');
+  });
+
+  it('landmarks skip the title and junk, and are limited to 3 within 300 m', () => {
+    const title = c('興輝樓', 10, 'building');
+    const l = pickLandmarks([title, c('WiFi.HK 熱點', 5), c('A樓', 50), c('B苑', 90), c('C中心', 120), c('D閣', 200), c('遠處', 900)], title);
+    expect(l.map(x => x.name)).toEqual(['A樓', 'B苑', 'C中心']);
+  });
+});
+
+describe('parseNearby', () => {
+  // 注意：searchNearby 未有真實完整 fixture；呢個係按「陣列 + cname/caddress/x/y」嘅合理形狀造嘅合成資料，
+  // 一旦用 ?debug=1 錄到真實回應就要換成真 fixture。
+  it('reads an array and a results-wrapped array, with explicit keys only', () => {
+    const items = [{ cname: '錦上路站', caddress: '錦上路', x: 824588, y: 832830 }, { nameStatus: 'x', x: 824600, y: 832700 }];
+    expect(parseNearby(items, kam).map(v => v.name)).toEqual(['錦上路站']);
+    expect(parseNearby({ results: items }, kam)).toHaveLength(1);
+    expect(parseNearby('oops', kam)).toEqual([]);
+  });
+  it('with a 1000-item junk-heavy list, still picks the real place', () => {
+    const junk = Array.from({ length: 900 }, (_, i) => ({ cname: `WiFi.HK 熱點 ${i}`, x: 824648 + (i % 30), y: 832746 + (i % 20) }));
+    const list = parseNearby([...junk, { cname: '路旁泊車位', x: 824650, y: 832750 }, { cname: '錦田南花園', x: 824700, y: 832760 }], kam);
+    expect(pickTitle(list)?.name).toBe('錦田南花園');
   });
 });
 
 describe('ALS', () => {
   const chi = {
-    Region: '新界',
-    ChiDistrict: { DcDistrict: '屯門區' },
-    ChiStreet: { StreetName: '大興街', BuildingNoFrom: '1' },
-    ChiEstate: { EstateName: '大興邨' },
-    BuildingName: '興輝樓',
+    Region: '新界', ChiDistrict: { DcDistrict: '屯門區' }, ChiStreet: { StreetName: '大興街', BuildingNoFrom: '1' },
+    ChiEstate: { EstateName: '大興邨' }, BuildingName: '興輝樓',
   };
   it('formats Chinese address in local order', () => {
     expect(formatAlsChinese(chi)).toBe('新界屯門區大興街1號大興邨興輝樓');
@@ -61,104 +106,68 @@ describe('ALS', () => {
   });
 });
 
-describe('parseNominatim', () => {
-  it('uses the building name and builds a big-to-small Chinese address', () => {
-    const c = parseNominatim({
-      name: '興耀樓', lat: '22.40801', lon: '113.97312',
-      address: { building: '興耀樓', road: '興輝街', neighbourhood: '大興邨', suburb: '大興', city_district: '屯門區', state: '新界' },
-    }, origin);
-    expect(c?.name).toBe('興耀樓');
-    expect(c?.address).toBe('新界屯門區大興大興邨興輝街');
-    expect(c?.distanceM).toBeCloseTo(0);
+describe('parseNominatim (real captured response)', () => {
+  it('still parses, but shows why OSM is off by default: it named a subway-entrance node', () => {
+    const r = parseNominatim(nominatimKamSheung, kam);
+    expect(r?.name).toBe('錦莆路');
+    expect(Math.round(r?.distanceM ?? 0)).toBe(27); // 節點離你 ~27 m，而且係出入口，唔係你所在嘅地方
   });
-  it('falls back to the road when there is no named feature', () => {
-    expect(parseNominatim({ address: { road: '屯門公路', house_number: '8' } }, origin)?.name).toBe('屯門公路8號');
+  it('rejects error bodies', () => {
     expect(parseNominatim({ error: 'Unable to geocode' }, origin)).toBeNull();
   });
 });
 
 describe('reverseGeocode', () => {
   afterEach(() => vi.unstubAllGlobals());
-  const respond = (routes: Record<string, unknown>) =>
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const hit = Object.entries(routes).find(([k]) => url.includes(k));
-      if (!hit) throw new TypeError('Failed to fetch');
-      return new Response(JSON.stringify(hit[1]), { status: 200 });
-    }));
-  const p80 = { x: origin.x, y: origin.y, source: 'local' as const };
+  const p80 = { x: kam.x, y: kam.y, source: 'local' as const };
+  const stub = (handler: (url: string) => Promise<Response> | Response) => {
+    const fn = vi.fn(async (url: string) => handler(url));
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  };
+  const json = (v: unknown) => new Response(JSON.stringify(v));
 
-  it('uses identify from www.map.gov.hk and nearby landmarks', async () => {
-    respond({
-      'www.map.gov.hk/gs/api/v1.0.0/identify': { results: [{ nameZH: '興耀樓' }] },
-      searchNearby: [{ nameZH: '青田花園', x: 816530, y: 825700 }, { nameZH: '興耀樓', x: 816505, y: 825700 }],
-    });
-    const r = await reverseGeocode(p80, origin);
-    expect(r?.name).toBe('興耀樓');
-    expect(r?.proximity).toBe('at');
-    expect(r?.source).toBe('identify');
-    expect(r?.landmarks.map(l => l.name)).toEqual(['青田花園']);
-  });
-
-  it('falls back to the geodata.gov.hk mirror, then nearby, then OpenStreetMap', async () => {
-    respond({ 'geodata.gov.hk/gs/api/v1.0.0/identify': [{ nameZH: '鏡像結果' }] });
-    expect((await reverseGeocode(p80, origin))?.name).toBe('鏡像結果');
-
-    respond({ searchNearby: [{ nameZH: '青田花園', x: 816560, y: 825700 }] });
-    const n = await reverseGeocode(p80, origin);
-    expect([n?.name, n?.proximity, n?.source]).toEqual(['青田花園', 'near', 'nearby']);
-
-    respond({ 'nominatim.openstreetmap.org': { name: '興耀樓', lat: '22.40801', lon: '113.97312', address: { building: '興耀樓', city_district: '屯門區' } } });
-    const o = await reverseGeocode(p80, origin);
-    expect([o?.name, o?.source, o?.address]).toEqual(['興耀樓', 'osm', '屯門區']);
-  });
-
-  it('prefers identify over OpenStreetMap when both answer', async () => {
-    respond({
-      'www.map.gov.hk/gs/api/v1.0.0/identify': [{ nameZH: '興耀樓' }],
-      'nominatim.openstreetmap.org': { name: 'OSM名', address: { building: 'OSM名' } },
-    });
-    const r = await reverseGeocode(p80, origin);
-    expect([r?.name, r?.source]).toEqual(['興耀樓', 'identify']);
-  });
-
-  it('reports the place before the ALS lookup finishes, then adds the ALS address', async () => {
+  it('uses the real identify capture: 「錦上路站」 as a nearby (not at) place, and reports it before ALS finishes', async () => {
     let releaseAls!: () => void;
-    const alsGate = new Promise<void>(r => { releaseAls = r; });
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.includes('www.map.gov.hk')) return new Response(JSON.stringify([{ nameZH: '興輝樓' }]));
-      if (url.includes('als.gov.hk')) {
-        await alsGate;
-        return new Response(JSON.stringify({ SuggestedAddress: [{ Address: { PremisesAddress: {
-          ChiPremisesAddress: { Region: '新界', BuildingName: '興輝樓' },
-          GeospatialInformation: { Easting: String(origin.x), Northing: String(origin.y) } } } }] }));
-      }
+    const gate = new Promise<void>(r => { releaseAls = r; });
+    const fetchFn = stub(async url => {
+      if (url.includes('www.map.gov.hk/gs/api/v1.0.0/identify')) return json(identifyKamSheung);
+      if (url.includes('als.gov.hk')) { await gate; return json({ SuggestedAddress: [] }); }
       throw new TypeError('Failed to fetch');
-    }));
-    const partials: (string | undefined)[] = [];
-    const done = reverseGeocode(p80, origin, undefined, pl => partials.push(`${pl.name}|${pl.address ?? ''}`));
-    await vi.waitFor(() => expect(partials).toEqual(['興輝樓|']));
-    releaseAls();
-    expect((await done)?.address).toBe('新界興輝樓');
-  });
-
-  it('shows the OpenStreetMap result first, then replaces it with the government name', async () => {
-    let releaseGov!: () => void;
-    const govGate = new Promise<void>(r => { releaseGov = r; });
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.includes('nominatim')) return new Response(JSON.stringify({ name: 'OSM名', address: { building: 'OSM名' } }));
-      if (url.includes('www.map.gov.hk')) { await govGate; return new Response(JSON.stringify([{ nameZH: '興耀樓' }])); }
-      throw new TypeError('Failed to fetch');
-    }));
+    });
     const partials: string[] = [];
-    const done = reverseGeocode(p80, origin, undefined, pl => partials.push(`${pl.name}|${pl.source}`));
-    await vi.waitFor(() => expect(partials).toEqual(['OSM名|osm']));
-    releaseGov();
-    expect((await done)?.name).toBe('興耀樓');
-    expect(partials).toEqual(['OSM名|osm', '興耀樓|identify']);
+    const done = reverseGeocode(p80, kam, undefined, pl => partials.push(`${pl.name}|${pl.proximity}`));
+    await vi.waitFor(() => expect(partials).toEqual(['錦上路站|near']));
+    releaseAls();
+    const r = await done;
+    expect([r?.name, r?.kind, r?.source]).toEqual(['錦上路站', 'transport', 'identify']);
+    expect(fetchFn.mock.calls.map(c => c[0] as string).some(u => u.includes('geodata.gov.hk/gs/api'))).toBe(false);
   });
 
-  it('returns null only when every source fails', async () => {
-    respond({});
-    expect(await reverseGeocode(p80, origin)).toBeNull();
+  it('never calls OpenStreetMap by default, and returns null (coordinates only) when government APIs fail', async () => {
+    const fetchFn = stub(() => { throw new TypeError('Failed to fetch'); });
+    expect(await reverseGeocode(p80, kam)).toBeNull();
+    expect(fetchFn.mock.calls.some(c => String(c[0]).includes('nominatim'))).toBe(false);
+  });
+
+  it('falls back to searchNearby when identify has nothing usable, ignoring junk', async () => {
+    stub(url => {
+      if (url.includes('/identify')) return json({ results: [] });
+      if (url.includes('/searchNearby')) return json([{ cname: 'WiFi.HK 熱點', x: 824648, y: 832746 }, { cname: '錦田南花園', x: 824660, y: 832750 }]);
+      throw new TypeError('Failed to fetch');
+    });
+    const r = await reverseGeocode(p80, kam);
+    expect([r?.name, r?.source, r?.proximity]).toEqual(['錦田南花園', 'nearby', 'at']);
+  });
+
+  it('keeps the identify title and only takes landmarks from searchNearby', async () => {
+    stub(url => {
+      if (url.includes('/identify')) return json(identifyKamSheung);
+      if (url.includes('/searchNearby')) return json([{ cname: '大埔道公園', x: 824600, y: 832700 }, { cname: '郵箱 PB9', x: 824648, y: 832746 }]);
+      throw new TypeError('Failed to fetch');
+    });
+    const r = await reverseGeocode(p80, kam);
+    expect(r?.name).toBe('錦上路站');
+    expect(r?.landmarks.map(l => l.name)).toEqual(['大埔道公園']);
   });
 });

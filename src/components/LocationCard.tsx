@@ -18,14 +18,25 @@ const ERROR_TEXT: Record<string, string> = {
   'outside-hk': '你似乎不在香港範圍內',
 };
 
-/** 頂部大字卡：「你現在位於：興輝樓附近」。所有變化都會被讀屏器讀出（aria-live）。 */
+/** 一句會被讀屏器讀出嘅說明。只有呢一行係 live region，咁地址 / 精度更新時唔會成張卡由頭讀過。 */
+function announcement(loc: CurrentLocation, headline: string | null): string {
+  if (!loc.fix) {
+    if (loc.status === 'error' && loc.error) return ERROR_TEXT[loc.error.code] ?? '未能定位';
+    return '正在找你的位置';
+  }
+  if (headline) return `你現在位於${headline}`;
+  return loc.placeStatus === 'loading' || loc.placeStatus === 'idle' ? '已找到你的位置，正在查詢附近地址' : '已找到你的位置，未能查到地址';
+}
+
+/** 頂部大字卡：「你現在位於：興輝樓附近」。 */
 export function LocationCard({ loc }: { loc: CurrentLocation }) {
   const { fix, place, placeStatus, error, status } = loc;
   const headline = placeHeadline(place);
   const acc = fix ? accuracyLabel(fix.accuracy) : null;
 
   return (
-    <section className="card" aria-live="polite" aria-atomic="true" aria-label="你的位置">
+    <section className="card" aria-label="你的位置">
+      <p className="sr-only" role="status" aria-live="polite">{announcement(loc, headline)}</p>
       {!fix && status !== 'error' && (
         <>
           <p className="card__eyebrow">請稍等幾秒</p>
@@ -69,7 +80,7 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
           )}
           {place?.source === 'osm' && <p className="card__source">地址資料來源：OpenStreetMap</p>}
           {(placeStatus === 'failed' || placeStatus === 'not-found') && !place && (
-            <p className="card__sub">未能查到地址，但你仍然可以分享位置給家人。</p>
+            <p className="card__sub">未能查到地址，但你仍然可以分享位置。</p>
           )}
           {error?.code === 'outside-hk' && <p className="card__sub">{ERROR_TEXT['outside-hk']}，未能顯示香港地址。</p>}
           {acc && (

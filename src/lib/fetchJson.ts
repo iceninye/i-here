@@ -1,4 +1,4 @@
-import { logApi } from './apiLog';
+import { DEBUG, logApi } from './apiLog';
 
 export class HttpError extends Error {
   constructor(public status: number, public url: string) {
@@ -18,8 +18,8 @@ export async function fetchJson<T = unknown>(
   signal?.addEventListener('abort', onAbort);
   const t0 = performance.now();
   const update = logApi({ name, url, ok: false, status: 'pending', ms: 0, snippet: '' });
-  const log = (ok: boolean, status: string, snippet: string) =>
-    update({ ok, status, ms: Math.round(performance.now() - t0), snippet: snippet.slice(0, 600) });
+  const log = (ok: boolean, status: string, text: string) =>
+    update({ ok, status, ms: Math.round(performance.now() - t0), snippet: text.slice(0, 600), body: DEBUG ? text : undefined });
   try {
     const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json', ...headers } });
     const text = await res.text();

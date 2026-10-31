@@ -1,0 +1,43 @@
+{
+  "_fixture": "Abridged from a real www.map.gov.hk identify response captured on a phone (x=824648, y=832746, lang=zh). Only fields present in the capture are kept; the capture was cut off after the first facility's otherEname.",
+  "results": [
+    {
+      "type": "ADDRESS",
+      "eheader": "Building Information",
+      "cheader": "建築物資訊",
+      "addressInfo": [
+        {
+          "ename": "Kam Sheung Road Station",
+          "cname": "錦上路站",
+          "eaddress": null,
+          "caddress": null,
+          "nameStatus": null,
+          "otherEname": [],
+          "otherCname": [],
+          "addressType": "B",
+          "x": 824588,
+          "y": 832830,
+          "uniqueId": "1105750262",
+          "hashTag": [],
+          "facility": [
+            {
+              "type": "FACI",
+              "eheader": "Automated External Defibrillators",
+              "cheader": "自動心臟除顫器",
+              "addressInfo": [
+                {
+                  "ename": "Automated External Defibrillators - Kam Sheung Road Station",
+                  "cname": "自動心臟除顫器 - 錦上路站",
+                  "eaddress": "Kam Sheung Road Station",
+                  "caddress": "錦上路站",
+                  "nameStatus": null,
+                  "otherEname": null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

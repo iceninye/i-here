@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { DebugPanel } from './components/DebugPanel';
+import { InAppBanner } from './components/InAppBanner';
 import { LocationCard } from './components/LocationCard';
 import { MapView } from './components/MapView';
 import { ShareButton } from './components/ShareButton';
@@ -7,7 +8,7 @@ import { useCurrentLocation } from './hooks/useCurrentLocation';
 import { googleMapsUrl, parseSharedLocation } from './lib/shareText';
 
 export default function App() {
-  // 收件人打開家人分享嘅連結（?at=lat,lng）：先顯示對方位置，唔即刻彈定位權限嚇親人
+  // 收件人打開別人分享嘅連結（?at=lat,lng）：先顯示對方位置，唔即刻彈定位權限
   const shared = useMemo(() => parseSharedLocation(location.search), []);
   const [viewingShared, setViewingShared] = useState(!!shared);
   const loc = useCurrentLocation({ enabled: !viewingShared });
@@ -25,8 +26,8 @@ export default function App() {
 
       <header className="top">
         {viewingShared && shared ? (
-          <section className="card" aria-label="家人分享的位置">
-            <p className="card__eyebrow">家人分享的位置</p>
+          <section className="card" aria-label="對方分享的位置">
+            <p className="card__eyebrow">對方分享的位置</p>
             <p className="card__title">{shared.label ?? '地圖上的紅色標記'}</p>
             <a className="card__action" href={googleMapsUrl(shared.lat, shared.lng)} target="_blank" rel="noopener">
               🧭 用 Google 地圖導航前往
@@ -35,6 +36,7 @@ export default function App() {
         ) : (
           <LocationCard loc={loc} />
         )}
+        <InAppBanner />
         {debug && <DebugPanel loc={loc} />}
       </header>
 
