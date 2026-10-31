@@ -33,15 +33,15 @@ GPS (WGS84)
   │ ① 取樣窗：watchPosition 8 秒內收集多個 fix，保留最準；≤30 m 即刻停（移植自 mtr-app）
   │    每個更準嘅 fix 即時更新地圖（唔使等成個取樣窗）
   ▼
-HK80：本機 proj4（EPSG:2326，誤差 ~1 m）即刻計；地政總署坐標轉換 API（www.geodetic.gov.hk）喺背景核對，唔阻住查地址
-  │   （舊網址 geodetic.landsd.gov.hk 永遠冇回應；回應 key 未驗證，用 ?debug=1 睇）
+HK80：本機 proj4（EPSG:2326）即刻計；地政總署坐標轉換 API（www.geodetic.gov.hk，~0.3 s，回 `{ hkN, hkE }`）喺背景核對，唔阻住查地址
+  │   （實測錦上路站 A 出口：本機同官方差 < 1 cm；舊網址 geodetic.landsd.gov.hk 永遠冇回應）
   ▼
 identify（www.map.gov.hk，~0.2–1.4 s）→ 你所在嘅大廈 / 屋苑 / 車站，或者街道（街道冇座標，當作就喺查詢點；路口會有幾條）；一回就顯示
 searchNearby（同一 host）→ 1 km 內設施。回應冇距離上限，而且大部分係 WiFi 熱點、郵箱、路旁泊車位、
                            停車場、AED，所以只用嚟做「附近還有」，並經黑名單 + 分類 + 距離篩選
   ▼   標題分數 = 距離 + 類別罰分（大廈 / 屋苑 0 < 車站 20 < 店舖 40 < 設施 60 < 街道 130）
   ▼
-ALS 門牌地址搜尋（用地名查；街名唔查，因為 ALS 對「天福路」會回沙田嘅結果）→ 揀 250 m 內最近嗰個 → 補官方中文地址（地名已經先顯示咗）
+ALS 門牌地址搜尋（用地名查；街名唔查，因為 ALS 對「天福路」會回沙田嘅結果）→ 只收離「呢個地方自己座標」60 m 內嘅（柏瓏：4 m；A 出口嘅第一個結果係 165 m 外嘅另一幢大廈，要拒絕）→ 補官方中文地址（地名已經先顯示咗）
   ▼
 「你現在位於：興輝樓附近」＋ 地址 ＋ 附近還有：大興街市（95 米）…
 ```
@@ -141,14 +141,15 @@ wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
 - 第一個 fix：±23.8 m，**真實誤差約 26 m**（同畫面上嘅「±24 米」吻合，所以 ±15 m 以上唔再叫「很準確」）。
 - 約 17 秒後收窄到 ±3 m；之後靜止時抖動只有約 1–2 m（±2–5 m）。
 - 所以：**露天靜止時唔需要自己平均 / 平滑**，OS 融合已經夠好；關鍵係**精度變好之後要重新查地址**（以前要行夠 40 m 先重查，會一直停喺粗略位置嘅結果，標題變咗 79 m 外嘅屋苑）。
+- 錦上路站 A 出口（靜止約 66 秒）：第一個 fix 已經 ±4.1 m（OS 有暖機位置），之後 ±2.2–4.1 m；位置慢慢漂移約 2 m，抖動 < 1 m。同一部機喺 D 出口冷啟動（第一個 fix 差 26 m）對比，可見**差別在冷啟動**，唔在平滑。
 - 未量度：街道峽谷（旺角）、室內、行路中。
 
 ## ⚠️ 已知限制 / 待驗證
 
 - `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-*.json`：錦上路站、天水圍站（節錄版），天福路、宏達路（完整））。
-- `ALS` 嘅輸出語言由 `Accept-Language` 決定：以前冇傳，只回英文（`als-grand-mayfair.json`，完整）；現在傳 `en,zh-Hant`，中文欄位 `ChiPremisesAddress` 仲未見過真實回應，要用 `?debug=1` 確認。
+- `ALS` 嘅輸出語言由 `Accept-Language` 決定：以前冇傳，只回英文（`als-grand-mayfair.json`、`als-kam-sheung-road-a-access.json`，完整）；現在傳 `en,zh-Hant`，中文欄位 `ChiPremisesAddress` 仲未見過真實回應（最近一份紀錄來自未帶 header 嘅舊版本），要用 `?debug=1` 確認。
+- 坐標轉換 API 已用真實回應確認（`transform-kam-sheung-road-a.json`）。
 - `searchNearby` 真實格式已確認（`searchnearby-kam-sheung-road-exit-d.json`，43 項中揀 16 項原文）：`[{ name, address, x, y, additionalInfoKey[], additionalInfoValue[] }]`。
-- `searchNearby` 同 `ALS` 仲未有完整真實 fixture：`searchNearby` 嘅 parser 只收「陣列 + 明確 key」。用 `?debug=1` → 「原始回應：searchNearby」可以錄低完整回應，換入測試。
 - **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」（第一行 `build:` 係版本，手機有時會跑緊舊快取，貼紀錄時請連埋呢行）：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
 - 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片）：開立體圖時會向 OpenFreeMap 要圖磚，等於將畫面範圍告訴佢；之後會改用自己託管嘅資料。
 - 北區同深圳交界一帶，經緯度範圍檢查無可避免會重疊；嗰度 identify 搵唔到大廈就只顯示座標。
