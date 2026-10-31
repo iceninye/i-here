@@ -14,6 +14,13 @@ export interface Fix {
   /** 米，95% 信心半徑（瀏覽器定義） */
   accuracy: number;
   timestamp: number;
+  /**
+   * m/s。`coords.speed` 好多情況係 `null`（室內 / Wi-Fi 定位 / 部分 Android），
+   * 所以呢度用 `undefined` 表「未知」——**唔係 0**（未知 ≠ 靜止，見 motion.ts）。
+   */
+  speed?: number;
+  /** 度（0–360，正北順時針）；未知 → `undefined`。 */
+  heading?: number;
 }
 
 export type GeoErrorCode = 'denied' | 'unavailable' | 'timeout' | 'unsupported' | 'outside-hk';
@@ -44,9 +51,13 @@ export function isInHongKong(lat: number, lng: number): boolean {
 }
 
 export function toFix(pos: GeolocationPosition): Fix | null {
-  const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+  const { latitude: lat, longitude: lng, accuracy, speed, heading } = pos.coords;
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
-  return { lat, lng, accuracy: Number.isFinite(accuracy) ? accuracy : Infinity, timestamp: pos.timestamp };
+  const fix: Fix = { lat, lng, accuracy: Number.isFinite(accuracy) ? accuracy : Infinity, timestamp: pos.timestamp };
+  // coords.speed / heading 可能係 null；部分裝置無效時回負數，一律當「未知」（undefined），唔好當 0
+  if (typeof speed === 'number' && Number.isFinite(speed) && speed >= 0) fix.speed = speed;
+  if (typeof heading === 'number' && Number.isFinite(heading) && heading >= 0) fix.heading = heading;
+  return fix;
 }
 
 export function geoErrorFrom(err: GeolocationPositionError | { code: number; message?: string }): GeoError {
@@ -123,6 +134,21 @@ export function haversineM(lat1: number, lng1: number, lat2: number, lng2: numbe
   const dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * 推算速度（m/s）—— 用相鄰兩個 fix 嘅位移 ÷ 時間差。
+ * `coords.speed` 好多情況係 null（室內 / Wi-Fi / 部分 Android），呢個係後備來源。
+ *  - 時間差 <0.2 s 或無效 → undefined（未知，唔好亂估）。
+ *  - 位移 ≤ max(accuracy, 5 m) → 0（GPS 抖動，當冇郁）。
+ *  - 否則 dist / dt。
+ */
+export function derivedSpeed(prev: Fix, cur: Fix): number | undefined {
+  const dt = (cur.timestamp - prev.timestamp) / 1000;
+  if (!Number.isFinite(dt) || dt < 0.2) return undefined;
+  const dist = haversineM(prev.lat, prev.lng, cur.lat, cur.lng);
+  const noise = Math.max(cur.accuracy, prev.accuracy, 5);
+  return dist <= noise ? 0 : dist / dt;
 }
 
 /** 精度圈 polygon（GeoJSON [lng, lat]） */
