@@ -34,7 +34,7 @@ GPS (WGS84)
   │    每個更準嘅 fix 即時更新地圖（唔使等成個取樣窗）
   ▼
 HK80：本機 proj4（EPSG:2326）即刻計；地政總署坐標轉換 API（www.geodetic.gov.hk，~0.3 s，回 `{ hkN, hkE }`）喺背景核對，唔阻住查地址
-  │   （實測錦上路站 A 出口：本機同官方差 < 1 cm；舊網址 geodetic.landsd.gov.hk 永遠冇回應）
+  │   （實測 3 個位置：本機同官方只差約 1 mm；舊網址 geodetic.landsd.gov.hk 永遠冇回應）
   ▼
 identify（www.map.gov.hk，~0.2–1.4 s）→ 你所在嘅大廈 / 屋苑 / 車站，或者街道（街道冇座標，當作就喺查詢點；路口會有幾條）；一回就顯示
 searchNearby（同一 host）→ 1 km 內設施。回應冇距離上限，而且大部分係 WiFi 熱點、郵箱、路旁泊車位、
@@ -142,12 +142,13 @@ wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
 - 約 17 秒後收窄到 ±3 m；之後靜止時抖動只有約 1–2 m（±2–5 m）。
 - 所以：**露天靜止時唔需要自己平均 / 平滑**，OS 融合已經夠好；關鍵係**精度變好之後要重新查地址**（以前要行夠 40 m 先重查，會一直停喺粗略位置嘅結果，標題變咗 79 m 外嘅屋苑）。
 - 錦上路站 A 出口（靜止約 66 秒）：第一個 fix 已經 ±4.1 m（OS 有暖機位置），之後 ±2.2–4.1 m；位置慢慢漂移約 2 m，抖動 < 1 m。同一部機喺 D 出口冷啟動（第一個 fix 差 26 m）對比，可見**差別在冷啟動**，唔在平滑。
+- 錦上路站 D 出口第二次（冷啟動，走近出口）：16.0 m → 10 m（4 s）→ 4.3 m（9 s）→ ≤3 m（約 25 s）；最初幾個 fix 實際離最終位置約 21 m（回報 ±16 m），所以仍然要「精度改善就重查」。
 - 未量度：街道峽谷（旺角）、室內、行路中。
 
 ## ⚠️ 已知限制 / 待驗證
 
-- `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-*.json`：錦上路站、天水圍站（節錄版），天福路、宏達路（完整））。
-- `ALS` 嘅輸出語言由 `Accept-Language` 決定：以前冇傳，只回英文（`als-grand-mayfair.json`、`als-kam-sheung-road-a-access.json`，完整）；現在傳 `en,zh-Hant`，中文欄位 `ChiPremisesAddress` 仲未見過真實回應（最近一份紀錄來自未帶 header 嘅舊版本），要用 `?debug=1` 確認。
+- `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-*.json`：錦上路站、天水圍站、柏瓏、A 出口……部分節錄，天福路、宏達路完整）。`addressType`：ST 街道、S 屋苑、P 平台、B 建築物、F 設施。
+- `ALS` 嘅輸出語言由 `Accept-Language` 決定：以前冇傳，只回英文；傳 `en,zh-Hant` 之後每個結果都有 `ChiPremisesAddress`（`ChiDistrict.DcDistrict`、`ChiStreet.StreetName / BuildingNoFrom`、`ChiEstate.EstateName`、`ChiBlock.BlockDescriptor / BlockNo`、`BuildingName`），已用真實回應確認（`als-kam-sheung-road-d-access.json`，完整）。ALS 嘅文字配對可以配到另一個地方（D 出口 → 300 m 外嘅「港鐵錦田大樓」），所以只收離地方本身 60 m 內嘅。
 - 坐標轉換 API 已用真實回應確認（`transform-kam-sheung-road-a.json`）。
 - `searchNearby` 真實格式已確認（`searchnearby-kam-sheung-road-exit-d.json`，43 項中揀 16 項原文）：`[{ name, address, x, y, additionalInfoKey[], additionalInfoValue[] }]`。
 - **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」（第一行 `build:` 係版本，手機有時會跑緊舊快取，貼紀錄時請連埋呢行）：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。

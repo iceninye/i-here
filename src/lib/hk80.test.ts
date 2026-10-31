@@ -42,3 +42,15 @@ describe('official transform API (real capture, Kam Sheung Road station exit A)'
     expect(Math.hypot(local.x - 824534.201, local.y - 832883.635)).toBeLessThan(0.1);
   });
 });
+
+describe('local conversion vs three real official results (exit A, exit D settled, exit D coarse)', () => {
+  const points: [string, number, number, number, number][] = [
+    ['exit A', 22.4353086, 114.0628922, 824534.201, 832883.635],
+    ['exit D settled', 22.4341571, 114.0637333, 824620.691, 832756.056],
+    ['exit D coarse', 22.4340508, 114.0635697, 824603.84, 832744.298],
+  ];
+  it.each(points)('%s: within 1 cm', (_name, lat, lng, e, n) => {
+    const l = wgs84ToHK80Local(lat, lng);
+    expect(Math.hypot(l.x - e, l.y - n)).toBeLessThan(0.01);
+  });
+});

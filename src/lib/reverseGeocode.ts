@@ -82,13 +82,13 @@ const SHOP = /便利店|超級市場|超市|餐廳|酒樓|麵包|藥房|藥行|�
 const STREET = /[路街道里徑巷]$/;
 
 /**
- * addressType（identify）：ST 街道、S 屋苑 / 村 / 地方名稱、B 建築物、F 設施（F 唔做標題，見下面）。
+ * addressType（identify）：ST 街道、S 屋苑 / 村 / 地方名稱、P 建築物平台（例如柏瓏）、B 建築物、F 設施。
  * searchNearby 冇類型，靠名稱判斷。
  */
 export function classifyName(name: string, addressType?: string | null): PlaceKind {
   if (addressType === 'ST') return 'street';
   if (TRANSPORT.test(name)) return 'transport';
-  if (addressType === 'S') return 'estate';
+  if (addressType === 'S' || addressType === 'P') return 'estate';
   if (addressType === 'B') return ESTATE.test(name) ? 'estate' : 'building';
   if (SHOP.test(name)) return 'shop';
   if (ESTATE.test(name)) return 'estate';

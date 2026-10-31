@@ -5,6 +5,8 @@
  */
 export interface ApiLogEntry {
   name: string;
+  /** 請求開始時間（Date.now()） */
+  at: number;
   url: string;
   ok: boolean;
   /** 'pending'、HTTP status，或者錯誤名（TypeError = 多數係 CORS / 網絡；AbortError = 逾時） */

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { wgs84ToHK80Local } from './hk80';
+import alsDAccess from './__fixtures__/als-kam-sheung-road-d-access.json';
 import alsGrandMayfair from './__fixtures__/als-grand-mayfair.json';
+import identifyPodium from './__fixtures__/identify-grand-mayfair-podium.json';
 import alsStreet from './__fixtures__/als-street-query.json';
 import alsAAccess from './__fixtures__/als-kam-sheung-road-a-access.json';
 import identifyAAccess from './__fixtures__/identify-kam-sheung-road-a-access.json';
@@ -240,6 +242,44 @@ describe('Kam Sheung Road station exit A (real captures, ±3 m fix)', () => {
     }));
     const r = await reverseGeocode({ x: exitA.x, y: exitA.y, source: 'landsd-api' }, exitA);
     expect([r?.name, r?.address]).toEqual(['港鐵錦上路站-A進出口', '新界元朗錦田香港鐵路錦上路站']);
+  });
+});
+
+describe('ALS with Accept-Language: real Chinese response (exit D capture, build d24be73)', () => {
+  it('formats the real Chinese address blocks (street + building, and street + estate + block)', () => {
+    const [mtr, placid] = alsDAccess.SuggestedAddress.map(a => a.Address.PremisesAddress.ChiPremisesAddress);
+    expect(formatAlsChinese(mtr)).toBe('新界元朗區錦河路23號港鐵錦田大樓');
+    expect(formatAlsChinese(placid)).toBe('新界元朗區錦上路9號芊逸居1座');
+  });
+  it('picks the block next to the place (0 m / 27 m) and rejects the same query from 300 m away', () => {
+    expect(pickAlsAddress(alsDAccess, { x: 824613, y: 833255 }, 60)).toBe('新界元朗區錦上路9號芊逸居1座');
+    expect(pickAlsAddress(alsDAccess, { x: 824620, y: 832757 }, 60)).toBeUndefined(); // D 出口：最近嘅 ALS 結果係 300 m 外
+  });
+  it('the exit D title keeps the address from searchNearby, because no ALS match is near the exit', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/identify')) return new Response(JSON.stringify(identifyKamSheung));
+      if (url.includes('/searchNearby')) return new Response(JSON.stringify(nearbyExitD));
+      if (url.includes('als.gov.hk')) return new Response(JSON.stringify(alsDAccess));
+      throw new TypeError('Failed to fetch');
+    }));
+    const r = await reverseGeocode({ x: 824620.691, y: 832756.056, source: 'landsd-api' }, { lat: 22.4341571, lng: 114.0637333 });
+    expect([r?.name, r?.source, r?.address]).toEqual(['港鐵錦上路站-D進出口', 'nearby', '新界元朗錦田香港鐵路錦上路站']);
+  });
+});
+
+describe('identify addressType P (real capture at the coarse first fix of exit D)', () => {
+  const coarse = { x: 824603.84, y: 832744.298, lat: 22.4340508, lng: 114.0635697 };
+  it('treats a podium as an estate', () => {
+    expect(classifyName('柏瓏', 'P')).toBe('estate');
+    const [c] = parseIdentify(identifyPodium, coarse);
+    expect(c).toMatchObject({ name: '柏瓏', kind: 'estate', address: '錦河路29號', x: 824521, y: 832769 });
+    expect(Math.round(c.distanceM)).toBe(86);
+  });
+  it('even at the coarse fix (±16 m, ~21 m off) the exit (21 m) already beats the estate (86 m)', () => {
+    const all = [...parseIdentify(identifyPodium, coarse), ...parseNearby(nearbyExitD, coarse)];
+    const title = pickTitle(all)!;
+    expect(title.name).toBe('港鐵錦上路站-D進出口');
+    expect(Math.round(title.distanceM)).toBe(21);
   });
 });
 

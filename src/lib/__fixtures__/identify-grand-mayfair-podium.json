@@ -1,0 +1,26 @@
+{
+  "_fixture": "Abridged from a real www.map.gov.hk identify response captured at Kam Sheung Road station exit D at the coarse first fix (x=824604, y=832744, lang=zh). The estate is returned as addressType P ('Podium Information'); the nested facility list is omitted.",
+  "results": [
+    {
+      "type": "ADDRESS",
+      "eheader": "Podium Information",
+      "cheader": "建築物平台資訊",
+      "addressInfo": [
+        {
+          "ename": "Grand Mayfair",
+          "cname": "柏瓏",
+          "eaddress": "29 KAM HO ROAD",
+          "caddress": "錦河路29號",
+          "nameStatus": null,
+          "otherEname": ["Kam Sheung Road Station Car Park (Current Name)", "Kam Sheung Road Station Public Transport Interchange (Other Name)"],
+          "otherCname": ["錦上路車站停車場（現稱）", "錦上路站公共運輸交匯處（別稱）"],
+          "addressType": "P",
+          "x": 824521,
+          "y": 832769,
+          "uniqueId": "1910260320",
+          "hashTag": [{ "tagType": "@", "edisplay": "Grand Mayfair", "cdisplay": "柏瓏", "addressType": "S", "id": "1910053327" }]
+        }
+      ]
+    }
+  ]
+}
