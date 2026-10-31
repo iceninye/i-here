@@ -1,6 +1,8 @@
 {
-  // Cloudflare Workers Builds：build 完將 dist/ 當靜態資源上載（冇 Worker script），做法同 mtr-app 一樣。
+  // Cloudflare Workers：靜態資產（dist/）+ Worker script（/api/* → LiveShareRoom DO）。
+  // D11 = B：GitHub Pages 仍然係主網址；呢個 Worker 提供 live share 嘅 /api/*，Pages 前端跨域 call。
   "name": "i-here",
+  "main": "worker/index.ts",
   "compatibility_date": "2025-09-01",
   "build": { "command": "npm run build" },
   // PR 分支嘅預覽部署用 `wrangler preview`，佢要求有 previews 區塊（可以係空嘅）；
@@ -8,6 +10,13 @@
   "previews": {},
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "not_found_handling": "single-page-application",
+    // 靜態資產照舊先服務；只有 /api/* 先入 Worker（live share 建房 + WebSocket upgrade）。
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "LIVE_SHARE", "class_name": "LiveShareRoom" }]
+  },
+  // 免費計劃只可以用 SQLite-backed DO → new_sqlite_classes（唔係 new_classes）。
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveShareRoom"] }]
 }

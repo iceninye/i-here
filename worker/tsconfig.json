@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": ["@cloudflare/workers-types"],
+    "noEmit": true
+  },
+  // 測試檔（*.test.ts）用 `cloudflare:test` 同 wrangler 生成嘅 `Cloudflare.Env` 環境型別，
+  // 由 vitest（workerd runtime）負責執行同驗證；呢度只 typecheck Worker / DO 源碼。
+  "include": ["."],
+  "exclude": ["**/*.test.ts"]
+}

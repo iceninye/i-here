@@ -1,0 +1,11 @@
+{
+  // 測試專用 wrangler config（@cloudflare/vitest-pool-workers）：
+  // 只保留 Worker + DO binding + migration，冇 assets / build（測試唔需要靜態資產）。
+  "name": "i-here-test",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-01",
+  "durable_objects": {
+    "bindings": [{ "name": "LIVE_SHARE", "class_name": "LiveShareRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveShareRoom"] }]
+}
