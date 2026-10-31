@@ -14,8 +14,9 @@ import identifyTinShuiWai from './__fixtures__/identify-tin-shui-wai-station.jso
 import identifyWangTat from './__fixtures__/identify-wang-tat-road.json';
 import nominatimKamSheung from './__fixtures__/nominatim-kam-sheung-road.json';
 import {
-  classifyName, formatAlsChinese, isTitleEligible, parseIdentify, parseNearby, parseNominatim,
-  pickAlsAddress, pickLandmarks, pickTitle, proximityFor, reverseGeocode, type PlaceCandidate,
+  classifyName, directionFrom, formatAlsChinese, isNearbyEligible, isTitleEligible, nearbyCategory,
+  parseIdentify, parseNearby, parseNominatim, pickAlsAddress, pickLandmarks, pickNearbyList, pickTitle,
+  proximityFor, reverseGeocode, type Origin, type PlaceCandidate,
 } from './reverseGeocode';
 
 /** 實測位置：錦上路站 A 出口（±3 m；官方坐標轉換 API 回 hkE 824534.201 / hkN 832883.635） */
@@ -438,5 +439,53 @@ describe('proximityFor', () => {
 
   it('treats a non-finite distance as near', () => {
     expect(proximityFor(NaN, 10)).toBe('near');
+  });
+});
+
+describe('「附近有咩」 pickNearbyList (§4.7)', () => {
+  const origin: Origin = { x: 800000, y: 800000, lat: 22.3, lng: 114.1 };
+  const cand = (name: string, distanceM: number, kind: PlaceCandidate['kind'], dx = 0, dy = 0): PlaceCandidate =>
+    ({ name, distanceM, kind, x: origin.x + dx, y: origin.y + dy });
+
+  it('keeps toilets but excludes Wi-Fi hotspots, parking, AED, recycling and mailboxes', () => {
+    expect(isNearbyEligible('錦上路公廁')).toBe(true);
+    expect(isNearbyEligible('錦田郵政局')).toBe(true);
+    expect(isNearbyEligible('智郵站')).toBe(true);
+    for (const bad of ['WiFi 熱點', '路旁泊車位', 'AED 除顫器', '塑膠回收點', '郵箱', '升降機']) {
+      expect(isNearbyEligible(bad)).toBe(false);
+    }
+  });
+
+  it('categorises by name/kind', () => {
+    expect(nearbyCategory('港鐵錦上路站-D進出口', 'transport')).toBe('transport');
+    expect(nearbyCategory('OK便利店', 'shop')).toBe('convenience');
+    expect(nearbyCategory('卓滙醫務中心', 'shop')).toBe('medical');
+    expect(nearbyCategory('錦上路公廁', 'facility')).toBe('toilet');
+    expect(nearbyCategory('錦田郵政局', 'other')).toBe('postal');
+    expect(nearbyCategory('鄧伯裘故居', 'other')).toBe('attraction');
+  });
+
+  it('computes 8-point compass direction from HK80 offsets', () => {
+    expect(directionFrom(100, 0)).toBe('東');
+    expect(directionFrom(0, 100)).toBe('北');
+    expect(directionFrom(-100, 0)).toBe('西');
+    expect(directionFrom(0, -100)).toBe('南');
+    expect(directionFrom(100, 100)).toBe('東北');
+  });
+
+  it('drops junk, enforces the 500 m radius, caps 2 per category and 8 total, and attaches direction', () => {
+    const list = pickNearbyList([
+      cand('WiFi 熱點', 10, 'facility'),               // excluded
+      cand('港鐵錦上路站-D進出口', 30, 'transport', 30, 0),
+      cand('OK便利店', 50, 'shop', 0, 50),
+      cand('錦上路公廁', 80, 'facility', -80, 0),
+      cand('某大廈', 600, 'building'),                  // beyond 500 m
+      cand('惠康超級市場', 120, 'shop', 0, 120),
+      cand('7-11', 130, 'shop'),                        // 3rd convenience -> capped out
+    ], origin);
+    expect(list.map(i => i.name)).toEqual(['港鐵錦上路站-D進出口', 'OK便利店', '錦上路公廁', '惠康超級市場']);
+    expect(list.find(i => i.name === '港鐵錦上路站-D進出口')?.direction).toBe('東');
+    expect(list.find(i => i.name === 'OK便利店')?.direction).toBe('北');
+    expect(list.every(i => i.distanceM <= 500)).toBe(true);
   });
 });
