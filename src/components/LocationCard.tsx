@@ -1,12 +1,12 @@
 import type { CurrentLocation } from '../hooks/useCurrentLocation';
-import { GEO } from '../lib/geo';
 import { placeHeadline } from '../lib/shareText';
 
 function accuracyLabel(acc: number): { text: string; level: 'good' | 'ok' | 'poor' } {
   if (!Number.isFinite(acc)) return { text: '準確度未知', level: 'poor' };
   const m = Math.round(acc);
-  if (acc <= GEO.GOOD_ACCURACY_M * 2) return { text: `很準確（約 ${m} 米內）`, level: 'good' };
-  if (acc <= GEO.POOR_ACCURACY_M) return { text: `大致準確（約 ${m} 米內）`, level: 'ok' };
+  // 實測：第一個 fix 話 ±24 m，真實誤差 ~26 m；約 17 秒後先收窄到 ±3 m。所以 ±15 m 以上唔好叫「很準確」
+  if (acc <= 15) return { text: `很準確（約 ${m} 米內）`, level: 'good' };
+  if (acc <= 60) return { text: `大致準確（約 ${m} 米內），仍在提升`, level: 'ok' };
   return { text: `不太準確（約 ${m} 米）`, level: 'poor' };
 }
 

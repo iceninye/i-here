@@ -73,14 +73,21 @@ export function isTitleEligible(name: string): boolean {
   return !TITLE_BLACKLIST.some(r => r.test(name));
 }
 
-const TRANSPORT = /站$|碼頭|總站|轉車站|渡輪|機場|口岸|隧道/;
+const TRANSPORT = /站$|進出口|出口|入口|碼頭|總站|轉車站|渡輪|機場|口岸|隧道/;
 const ESTATE = /邨|苑|花園|廣場|中心|大廈|大樓|商場|閣|居|軒|匯|城|樓|山莊|園$/;
+const SHOP = /便利店|超級市場|超市|餐廳|酒樓|麵包|藥房|藥行|銀行|診所|醫務中心|7-11|惠康|百佳|店$|舖$/;
 const STREET = /[路街道里徑巷]$/;
 
+/**
+ * addressType（identify）：ST 街道、S 屋苑 / 村 / 地方名稱、B 建築物、F 設施（F 唔做標題，見下面）。
+ * searchNearby 冇類型，靠名稱判斷。
+ */
 export function classifyName(name: string, addressType?: string | null): PlaceKind {
   if (addressType === 'ST') return 'street';
-  if (addressType === 'B') return TRANSPORT.test(name) ? 'transport' : ESTATE.test(name) ? 'estate' : 'building';
   if (TRANSPORT.test(name)) return 'transport';
+  if (addressType === 'S') return 'estate';
+  if (addressType === 'B') return ESTATE.test(name) ? 'estate' : 'building';
+  if (SHOP.test(name)) return 'shop';
   if (ESTATE.test(name)) return 'estate';
   if (STREET.test(name)) return 'street';
   return addressType ? 'other' : 'facility';
@@ -166,9 +173,10 @@ export function parseIdentify(json: unknown, origin: Origin): PlaceCandidate[] {
 /* ---------------- searchNearby ---------------- */
 
 /**
- * searchNearby：未有完整真實 fixture（debug 面板「複製原始回應」可以錄低）。
- * 所以呢度只收「陣列（或 results / data / items 入面嘅陣列）+ 明確嘅名稱 key」，唔再做模糊搵 key。
- * 回應冇距離上限（實測 582–1438 項），距離同黑名單都喺 pickTitle / pickLandmarks 篩。
+ * searchNearby 回應（實測）：陣列 [{ name, address, x, y, additionalInfoKey[], additionalInfoValue[] }]，
+ * x / y 係 HK80，冇類型，冇距離上限（實測 43–1438 項），而且大部分係 WiFi 熱點、郵箱、公廁、停車場、
+ * 回收點、路旁泊車位（name 係街名）。距離同黑名單喺 pickTitle / pickLandmarks 篩。
+ * 只收「陣列（或 results / data / items 入面嘅陣列）+ 明確嘅名稱 key」，唔做模糊搵 key。
  */
 const NEARBY_NAME_KEYS = ['cname', 'nameZH', 'nameTC', 'name', 'ename', 'nameEN'];
 const NEARBY_ADDR_KEYS = ['caddress', 'addressZH', 'addressTC', 'address', 'eaddress', 'addressEN'];
@@ -184,11 +192,16 @@ export function parseNearby(json: unknown, origin: Origin): PlaceCandidate[] {
     if (!isRecord(item)) continue;
     const name = NEARBY_NAME_KEYS.map(k => str(item[k])).find(Boolean);
     if (!name) continue;
+    // 路旁泊車位記錄係用街名做 name（東匯路、錦上路…），座標係泊車位位置，唔係你所在嘅街
+    const keys = Array.isArray(item.additionalInfoKey) ? item.additionalInfoKey.map(String) : [];
+    if (keys.some(k => /泊車位|收費/.test(k))) continue;
+    const kind = classifyName(name);
+    if (kind === 'street') continue; // 街道只信 identify
     out.push({
       name,
       address: NEARBY_ADDR_KEYS.map(k => str(item[k])).find(Boolean),
       distanceM: distanceTo(item, origin),
-      kind: classifyName(name),
+      kind,
     });
   }
   return out;
@@ -324,7 +337,11 @@ async function tryOsm(origin: Origin, signal?: AbortSignal): Promise<PlaceCandid
 async function lookupAls(title: PlaceCandidate, p: HK80Point, signal?: AbortSignal): Promise<string | undefined> {
   try {
     const q = encodeURIComponent(title.address ? `${title.name} ${title.address}` : title.name);
-    return pickAlsAddress(await fetchJson(`${ENDPOINTS.als}?q=${q}&n=5`, { signal, timeoutMs: 4000, name: 'ALS' }), p);
+    // ALS 嘅輸出語言由 Accept-Language 決定（唔傳就只回英文，實測）；呢個 header 屬 CORS safelisted，唔使 preflight
+    return pickAlsAddress(
+      await fetchJson(`${ENDPOINTS.als}?q=${q}&n=5`, { signal, timeoutMs: 4000, name: 'ALS', headers: { 'Accept-Language': 'en,zh-Hant' } }),
+      p,
+    );
   } catch (e) {
     if (signal?.aborted) throw e;
     return undefined; // ALS 失敗唔緊要，用來源本身嘅地址
@@ -333,9 +350,10 @@ async function lookupAls(title: PlaceCandidate, p: HK80Point, signal?: AbortSign
 
 /**
  * HK80 → 地方名 + 地址：
- *  1. identify（所在大廈）同 searchNearby（附近設施）並行
- *  2. identify 一回（~0.7 s）就揀標題並 onPartial，畫面即刻有字；之後 ALS 補官方門牌地址，同 searchNearby 並行
- *  3. identify 冇可用標題 → 等 searchNearby，經分類 / 黑名單 / 距離篩選後揀
+ *  1. identify（所在大廈 / 屋苑 / 街道）同 searchNearby（附近設施）並行
+ *  2. identify 一回（~1 s）就揀標題並 onPartial，畫面即刻有字
+ *  3. searchNearby 一回（~1 s）就同 identify 嘅結果一齊重新揀標題（分類 / 黑名單 / 距離），好過先前嘅就取代
+ *  4. 最後用 ALS 補官方門牌地址（街名唔查）
  *  4. 全部冇 → 只有 build 時開咗 VITE_OSM_FALLBACK 先會問 OpenStreetMap；否則回 null（畫面只顯示座標，仍可分享）
  */
 export async function reverseGeocode(
@@ -354,16 +372,17 @@ export async function reverseGeocode(
   let title = pickTitle(identified);
   let source: PlaceSource = 'identify';
 
-  if (title) {
-    onPartial?.(toPlace(title, source, pickLandmarks(identified, title)));
-  }
+  // identify 一回就先顯示（~1 s）；之後 searchNearby 一回再比較一次，更貼身嘅（例如 23 米外嘅車站出口
+  // 勝過 79 米外嘅屋苑）會取代佢
+  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title)));
+  const first = title;
 
-  // identify 已有標題：ALS 同 searchNearby 並行；否則先等 searchNearby
-  const nearby = title ? undefined : await nearbyP;
-  if (!title && nearby) {
-    title = pickTitle(nearby);
-    source = 'nearby';
-    if (title) onPartial?.(toPlace(title, source, pickLandmarks([...identified, ...nearby], title)));
+  const nearby = await nearbyP;
+  const best = pickTitle([...identified, ...nearby]);
+  if (best) {
+    title = best;
+    source = identified.includes(best) ? 'identify' : 'nearby';
+    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best)));
   }
 
   if (!title && OSM_FALLBACK) {
@@ -374,12 +393,9 @@ export async function reverseGeocode(
 
   const chosen = title;
   // 街名唔使查 ALS：實測 ALS 對「天福路」會回沙田嘅結果，只會白白多一個請求
-  const [address, nearbyAll] = await Promise.all([
-    chosen.kind === 'street' ? undefined : lookupAls(chosen, p, signal),
-    nearby ?? nearbyP,
-  ]);
+  const address = chosen.kind === 'street' ? undefined : await lookupAls(chosen, p, signal);
   return {
-    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearbyAll], chosen)),
+    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen)),
     address: address ?? chosen.address,
   };
 }

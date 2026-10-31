@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { wgs84ToHK80Local } from './hk80';
+import alsGrandMayfair from './__fixtures__/als-grand-mayfair.json';
 import alsStreet from './__fixtures__/als-street-query.json';
+import identifyGrandMayfair from './__fixtures__/identify-grand-mayfair.json';
+import nearbyExitD from './__fixtures__/searchnearby-kam-sheung-road-exit-d.json';
 import identifyKamSheung from './__fixtures__/identify-kam-sheung-road.json';
 import identifyTinFuk from './__fixtures__/identify-tin-fuk-road.json';
 import identifyTinShuiWai from './__fixtures__/identify-tin-shui-wai-station.json';
@@ -10,6 +14,13 @@ import {
   pickAlsAddress, pickLandmarks, pickTitle, reverseGeocode, type PlaceCandidate,
 } from './reverseGeocode';
 
+/**
+ * 實測：錦上路站 D 出口。手機第一次查地址用嘅係最初嗰個粗略 fix（±23.8 m，22.4342849, 114.0635424
+ * → HK80 824601, 832770），離你真實位置約 26 m；之後先收窄到 ±2 m（22.434139, 114.063738）。
+ * exitD = 粗略 fix 嘅位置（當時查地址用嘅點）；exitDSettled = 收窄後嘅真實位置。
+ */
+const exitD = { x: 824601.1, y: 832770.2, lat: 22.4342849, lng: 114.0635424 };
+const exitDSettled = { ...wgs84ToHK80Local(22.434139, 114.063738), lat: 22.434139, lng: 114.063738 };
 /** 實測位置：天水圍站（手機 debug 面板錄到） */
 const tsw = { x: 818477.0, y: 834242.6, lat: 22.447608, lng: 114.003996 };
 /** 實測位置：錦上路站附近（手機 debug 面板錄到） */
@@ -115,6 +126,77 @@ describe('parseNearby', () => {
   });
 });
 
+describe('Kam Sheung Road station exit D (real captures, ±2 m fix)', () => {
+  it('classifies station exits, estates (addressType S) and shops', () => {
+    expect(classifyName('港鐵錦上路站-D進出口')).toBe('transport');
+    expect(classifyName('柏瓏', 'S')).toBe('estate');
+    expect(classifyName('7-11便利店-元朗')).toBe('shop');
+    expect(classifyName('天福路', 'ST')).toBe('street');
+    expect(classifyName('興輝樓', 'B')).toBe('estate');
+  });
+
+  it('parseNearby drops the street-named parking records and street-kind items, keeps exits and shops', () => {
+    const names = parseNearby(nearbyExitD, exitD).map(c => c.name);
+    expect(names).not.toContain('東匯路');
+    expect(names).not.toContain('錦上路');
+    expect(names).toContain('港鐵錦上路站-D進出口');
+    expect(names).toContain('7-11便利店-元朗');
+    expect(names).toContain('惠康超級市場-錦田');
+  });
+
+  it('identify alone would say 柏瓏 (79 m); with searchNearby the title is the exit you stand at (23 m)', () => {
+    const identified = parseIdentify(identifyGrandMayfair, exitD);
+    expect(identified).toHaveLength(1); // the LOT result and nested facilities are ignored
+    expect(identified[0]).toMatchObject({ name: '柏瓏', kind: 'estate', address: '錦河路29號' });
+    expect(Math.round(identified[0].distanceM)).toBe(79);
+    const all = [...identified, ...parseNearby(nearbyExitD, exitD)];
+    const title = pickTitle(all)!;
+    expect(title.name).toBe('港鐵錦上路站-D進出口');
+    expect(Math.round(title.distanceM)).toBe(23);
+    expect(pickLandmarks(all, title).map(l => l.name)).toEqual(['港鐵錦上路站-C進出口', '7-11便利店-元朗', '柏瓏']);
+  });
+
+  it('at the settled position the exit is 「就喺度」 (about 5 m), the stale coarse point said 23 m', () => {
+    const all = [...parseIdentify(identifyGrandMayfair, exitDSettled), ...parseNearby(nearbyExitD, exitDSettled)];
+    const title = pickTitle(all)!;
+    expect(title.name).toBe('港鐵錦上路站-D進出口');
+    expect(Math.round(title.distanceM)).toBeLessThan(10);
+    expect(pickLandmarks(all, title).map(l => l.name)[0]).toBe('港鐵錦上路站-C進出口');
+  });
+
+  it('end to end: first 柏瓏 (identify), then the exit (searchNearby), no junk, address from identify', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/identify')) return new Response(JSON.stringify(identifyGrandMayfair));
+      if (url.includes('/searchNearby')) return new Response(JSON.stringify(nearbyExitD));
+      if (url.includes('als.gov.hk')) return new Response(JSON.stringify(alsGrandMayfair)); // English only, as captured
+      throw new TypeError('Failed to fetch');
+    }));
+    const partials: string[] = [];
+    const r = await reverseGeocode({ x: exitD.x, y: exitD.y, source: 'local' }, exitD, undefined, pl => partials.push(pl.name));
+    expect(partials).toEqual(['柏瓏', '港鐵錦上路站-D進出口']);
+    expect([r?.name, r?.kind, r?.proximity]).toEqual(['港鐵錦上路站-D進出口', 'transport', 'at']);
+    expect(r?.address).toBe('新界元朗錦田香港鐵路錦上路站'); // searchNearby 嘅 address
+  });
+
+  it('asks ALS for Chinese via Accept-Language, and uses a Chinese address when it comes back', async () => {
+    const chi = {
+      SuggestedAddress: [{ Address: { PremisesAddress: {
+        ChiPremisesAddress: { Region: '新界', ChiDistrict: { DcDistrict: '元朗區' }, ChiStreet: { StreetName: '錦河路', BuildingNoFrom: '29' }, ChiEstate: { EstateName: '柏瓏' } },
+        GeospatialInformation: { Northing: '832769', Easting: '824521' } } } }],
+    };
+    const fetchFn = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.includes('/identify')) return new Response(JSON.stringify(identifyGrandMayfair));
+      if (url.includes('als.gov.hk')) return new Response(JSON.stringify(chi));
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchFn);
+    const r = await reverseGeocode({ x: exitD.x, y: exitD.y, source: 'local' }, exitD);
+    expect(r?.address).toBe('新界元朗區錦河路29號柏瓏');
+    const alsCall = fetchFn.mock.calls.find(c => String(c[0]).includes('als.gov.hk'))!;
+    expect((alsCall[1]?.headers as Record<string, string>)['Accept-Language']).toBe('en,zh-Hant');
+  });
+});
+
 describe('ALS (real capture)', () => {
   it('ignores suggestions far from you, and ones without a Chinese address block', () => {
     expect(pickAlsAddress(alsStreet, { x: tsw.x, y: tsw.y })).toBeUndefined();
@@ -217,14 +299,16 @@ describe('reverseGeocode', () => {
     expect([r?.name, r?.source, r?.proximity]).toEqual(['錦田南花園', 'nearby', 'at']);
   });
 
-  it('keeps the identify title and only takes landmarks from searchNearby', async () => {
+  it('a clearly closer place from searchNearby replaces the identify title (and is reported as a second partial)', async () => {
     stub(url => {
       if (url.includes('/identify')) return json(identifyKamSheung);
       if (url.includes('/searchNearby')) return json([{ cname: '大埔道公園', x: 824600, y: 832700 }, { cname: '郵箱 PB9', x: 824648, y: 832746 }]);
       throw new TypeError('Failed to fetch');
     });
-    const r = await reverseGeocode(p80, kam);
-    expect(r?.name).toBe('錦上路站');
-    expect(r?.landmarks.map(l => l.name)).toEqual(['大埔道公園']);
+    const partials: string[] = [];
+    const r = await reverseGeocode(p80, kam, undefined, pl => partials.push(`${pl.name}|${pl.source}`));
+    expect(partials).toEqual(['錦上路站|identify', '大埔道公園|nearby']);
+    expect([r?.name, r?.source]).toEqual(['大埔道公園', 'nearby']);
+    expect(r?.landmarks.map(l => l.name)).toEqual(['錦上路站']);
   });
 });
