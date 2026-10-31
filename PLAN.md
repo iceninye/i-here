@@ -1,6 +1,6 @@
 # i-here 改進方案（PLAN）— 修訂版
 
-> 版本：2026-10-31 修訂 · 狀態：**修訂版，待確認** · 基於 commit `ee56cef`（PR #11 merge，現時 `main`）
+> 版本：2026-10-31 修訂（同日更新決策：D6 / D7 / D11，見 §12）· 狀態：**已定稿（D6 backlog、D7 E2EE、D11 Pages 保留）** · 代碼基線 commit `ee56cef`（PR #11 merge；之後只有文件變動）
 > 本文件記錄 i-here（我在哪裡）下一階段嘅方向、已鎖定嘅決策、同 P2 / P3 / P4 嘅技術方案。
 > 修訂依據：實測紀錄（錦上路站 D / A 出口、天水圍）、現有代碼、Cloudflare / 瀏覽器文件。**原稿每一項改動見 §11「修訂紀錄」**；標住「待驗證」嘅係我查唔到確切來源、或者要實機先知嘅說法。
 
@@ -58,24 +58,33 @@
 | D3 | **唔做**離線 / Service Worker | 純線上 PWA |
 | D4 | 純 PWA，**唔做** native shell | |
 | D5 | 部署 = **Cloudflare Workers**（沿用現有 `wrangler.jsonc` + Workers Builds） | Static Assets + Worker + Durable Objects |
-| D6 | 全球方向 A：HK 為主 + OSM 後備，按座標自動切換 | ⚠️ **未排期，且同 D10 衝突，見 §2.1** |
-| D7 | **放棄 E2EE**：live share server 中轉**明文**座標 | 理由修正見 §2.2：E2EE 唔會明顯加延遲 |
+| D6 | 全球方向 A：HK 為主 + OSM 後備，按座標自動切換 | **已決定：降為 backlog（P5）**，P2–P4 不涉及；理由見 §2.1 |
+| D7 | **端對端加密（E2EE）**：key 放 link 嘅 `#` fragment，server 只中轉密文 | **已決定**（原稿「明文中轉」取消）；設計見 §5.2.1，理由同限制見 §2.2 |
 | D8 | Live share 保留三項基本防濫用：opt-in + 常駐指示 + 一鍵停 / TTL + revoke / 預設唔持久化 | 另加必要嘅工程安全項，見 §5.4 |
-| D9 | Live share **預設唔持久化座標**：DO in-memory，房間關閉即冇 | TTL 用 alarm 只存到期時間（無座標），見 §5.2 |
-| D10 | 私隱預設：座標只送政府 API；OSM 後備預設關（`VITE_OSM_FALLBACK`） | **已知例外**：立體圖會向 OpenFreeMap 要圖磚；live share 座標經我哋 server |
-| D11 | （新）對外正式網址（canonical） | **待決定**，見 §6.2 |
+| D9 | Live share **預設唔持久化**：DO in-memory（連密文都唔落 storage），房間關閉即冇 | TTL 用 alarm 只存到期時間（無座標），見 §5.2 |
+| D10 | 私隱預設：座標只送政府 API；OSM 後備預設關（`VITE_OSM_FALLBACK`） | **已知例外**：立體圖會向 OpenFreeMap 要圖磚；live share 只有**密文**經我哋 server（server 睇唔到座標，但見到 IP、時間、訊息大小） |
+| D11 | 對外網址：**GitHub Pages 暫時保留**（唔搬網址、唔轉址） | **已決定**；live share 嘅部署方式（A / B）P4 時定，見 §6.2 |
 
-### 2.1 D6 嘅問題（要你決定）
+### 2.1 D6：降為 backlog（已決定）
 
+唔喺 P2–P4 做嘅理由：
 1. **冇 work package**：P2 / P3 / P4 都冇列全球化工作（底圖、`maxBounds`、地址來源、語言、`isInHongKong` 判斷）。目前 LandsD 底圖同 `maxBounds` 只覆蓋香港，HK 以外根本睇唔到地圖。
 2. **同 D10 衝突**：「HK bbox 外自動行 OSM」等於預設將座標送去第三方 Nominatim，而 D10 話 OSM 預設關。
 3. **公共 Nominatim 政策**（二手來源，未讀官方頁面）：整個 app 共用最多 1 request/s、唔准 heavy use、要有識別身份嘅 Referer / User-Agent、要快取；用戶多就要自架或用商業 geocoder。
-4. 建議：**將 D6 降級為 backlog（P5）**，P2–P4 唔受影響；真係要做先再寫 work package，並將 D10 改為「HK 以外要用戶按一下同意先用 OSM」。
 
-### 2.2 D7 理由修正（決定仍然係你嘅）
+日後真係要做：先寫 work package（底圖、`maxBounds`、地址來源、語言、`isInHongKong`），並將 D10 改為「HK 以外要用戶按一下同意先用 OSM」。
 
-原稿話明文中轉係為咗「工程簡化 + 低延遲」。**E2EE 唔會明顯增加延遲**：每秒一條 <200 byte 訊息，WebCrypto AES-GCM 加解密可以忽略。簡單做法：key 放喺 link 嘅 fragment（`#k=…`，瀏覽器唔會送去 server），DO 只中轉密文；工程量估計約半日（待驗證）。代價係 server 睇唔到座標，所以做唔到 server 側驗證（範圍、速度）—— 呢個本身都係可以接受嘅取捨。
-**D7 維持「明文中轉」；列為可選強化（D7+），請你確認要唔要。** 無論邊個選擇，opt-in 文案都要講明有 link 就睇到。
+### 2.2 D7：採用 E2EE（已決定）
+
+原稿「明文中轉」嘅理由係「工程簡化 + 低延遲」，兩樣都唔成立：每秒一條 <200 byte 訊息，WebCrypto AES-GCM 加解密可以忽略；工程量估計約半日（我估算，未實作）。採用 E2EE 嘅理由：
+1. 呢個功能最大風險係私隱（被人追蹤）；server 睇唔到座標，私隱聲明可以寫「我哋睇唔到你嘅位置」，而唔係「我哋只係暫存」。
+2. **越早做越平**：訊息由第一日就係 `{ iv, ct }`，之後唔使為咗加密而改通訊協議（雙方版本要同步）。
+
+**限制（要老實講）**：
+- 保護嘅係 **server 被動接觸**（log、後台人員、資料外洩）。**唔防我哋自己（或被入侵嘅部署）推出惡意 JavaScript**，因為網頁代碼都係我哋 serve。
+- Server 仍然見到 IP、連線時間、房間存在同訊息大小。
+- 有**完整 link**（連 `#` 後面嘅 key）嘅人都解到密——opt-in 文案仍然要寫明。
+- Server 做唔到內容驗證（座標範圍），只可以限制大小同頻率；由收件人解密後驗證。
 
 ---
 
@@ -204,7 +213,7 @@
 
 **性質**：最大工程。需要 backend（→ 依賴 P4）。
 **目標**：雙方都睇到對方實時位置；**網絡延遲 p95 < 300 ms**（顯示延遲仍然 ≥ GPS 取樣間隔 ~1 s）。
-**已鎖定**：明文中轉（D7）+ 防濫用（D8）+ 唔持久化座標（D9）。
+**已鎖定**：端對端加密（D7）+ 防濫用（D8）+ 唔持久化（D9）。
 
 ### 5.1 傳輸選型
 
@@ -228,7 +237,7 @@
   - 房主即時收到「有人加入」，顯示已加入人數；
   - 房主可以「踢走」並令該 link 失效；
   - 滿員後第三個連線直接拒絕（唔通知對方嘅位置）。
-- **訊息驗證**（DO 只中轉，但唔可以盲轉）：單條 ≤512 byte、每個 peer ≤2 條 / s、`lat ∈ [-90, 90]`、`lng ∈ [-180, 180]`、`accuracy ≥ 0`；違規即斷線。DO 加上 `serverTs`，client 用佢判斷新舊（device 時鐘唔可靠）。
+- **訊息驗證**（DO 只中轉，但唔可以盲轉）：單條 ≤512 byte、每個 peer ≤2 條 / s；違規即斷線。**Server 解唔到內容，所以唔驗證座標範圍**——收件人解密後先驗證（`lat ∈ [-90, 90]`、`lng ∈ [-180, 180]`、`accuracy ≥ 0`），唔合法就丟棄。DO 加上 `serverTs`，client 用佢判斷新舊（device 時鐘唔可靠）。
 - **狀態由 server 判斷**（唔靠 client 通知）：
   - client 每 5 s 送 `ping`（或有 `fix` 即視為心跳）；
   - 某 peer **>10 s** 冇任何訊息 → server 廣播 `peer: lost / paused`；
@@ -237,23 +246,37 @@
   - TTL 預設 30 分鐘（可續期）：用 `ctx.storage.setAlarm()` 設到期時間——**storage 只存一個 timestamp，無座標**（D9）。DO 被 evict，alarm 仍會觸發。
   - 任一 peer 送 `stop` → 關房、踢所有人。
   - 所有 peer 斷線 >60 s → 關房。
-- **記憶體內只保留**：每個 peer 嘅 **last fix**（新加入 / 重連時即時補一次，唔使等下一個 1 Hz）。**唔落 storage、唔寫座標 log。**
-- **訊息格式**（明文 JSON；DO 只做驗證同廣播，唔分析座標）：
+- **記憶體內只保留**：每個 peer 嘅 **last fix（密文）**（新加入 / 重連時即時補一次，唔使等下一個 1 Hz）。**唔落 storage、唔寫 log。**
+- **訊息格式**（JSON；位置喺密文入面，DO 只做大小 / 頻率檢查同廣播）：
   ```ts
+  // 控制訊息係明文（冇位置資料）；位置訊息 = AES-GCM 密文，由 client 加解密（§5.2.1）
   type ClientMsg =
     | { type: 'hello'; roomId: string; token?: string }  // token = hostToken（只有建立者）
-    | { type: 'fix'; lat: number; lng: number; accuracy: number; speed?: number; heading?: number; ts: number }
+    | { type: 'fix'; iv: string; ct: string }            // base64url；ct 內含 seq / lat / lng / accuracy / speed / heading / ts
     | { type: 'ping' } | { type: 'paused' } | { type: 'resume' } | { type: 'stop' };
   type ServerMsg =
     | { type: 'peer'; id: string; state: 'joined' | 'live' | 'paused' | 'lost' | 'left' }
-    | { type: 'fix'; from: string; lat: number; lng: number; accuracy: number; speed?: number; heading?: number; ts: number; serverTs: number }
+    | { type: 'fix'; from: string; iv: string; ct: string; serverTs: number }
     | { type: 'ended'; reason: 'stop' | 'ttl' | 'closed' | 'kicked' };
   ```
+
+### 5.2.1 端對端加密（D7）
+
+- **Key**：建立房間嘅 client 用 `crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])` 產生，匯出成 base64url（43 字元），**只放喺 link 嘅 fragment**：`https://<host>/#live=<roomId>&k=<key>`。Fragment 唔會送去 server，所以 server 同 Cloudflare 都攞唔到 key。
+- **加密**：每條位置訊息加密 `{ seq, lat, lng, accuracy, speed?, heading?, ts }`（JSON）。每條用新嘅 96-bit 隨機 IV；`additionalData` = `roomId`（密文綁定個房，搬去另一個房解唔到）。每個房 30 分鐘、約 3,600 條訊息，遠低於同一 key 配隨機 IV 嘅安全上限（約 2^32 條）。
+- **重放 / 亂序**：`seq`（每個 sender 遞增）喺密文入面，完整性由 AES-GCM 驗證；收件人丟棄 `seq ≤ 已收最大值` 嘅訊息。
+- **Server 見到咩**：`type`、`iv`、`ct` 嘅大小、時間、IP、房間存在。**見唔到**：座標、精度、速度、方向、`seq`。控制訊息（`hello` / `ping` / `paused` / `stop`）係明文，但冇位置資料。
+- **Key 嘅生命週期**：
+  - 加入者開 link 後，將 `{ roomId, key, 到期時間 }` 放入 **`sessionStorage`**（同一個分頁嘅 reload、或者 iOS 丟棄分頁後還原仍然保留，唔會跨分頁；**待實機驗證**），然後 `history.replaceState` 清走網址嘅 fragment。
+  - 唔用 `localStorage`；`stop` / 房間結束 / TTL 到期即刪。
+  - 少咗 `k`（例如分享 App 剝走 `#` 後面）→ 顯示「連結唔完整，請叫對方重新傳送」，唔好靜靜地連唔到。
+- **WebCrypto** 要 HTTPS（secure context）；iOS Safari 同 Chrome 都支援。
+- **測試**：往返加解密；改一個 byte 即驗證失敗；錯 key / 錯 `roomId`（additionalData）解唔到；重放被丟棄；DO 用**亂數密文**照樣中轉、`storage.list()` 冇內容；用 WhatsApp / 短訊實機傳 link 確認 fragment 完整。
 
 ### 5.3 Frontend 設計
 
 - **建立流程**：撳「實時分享」→ **opt-in 說明**（§5.4）→ 同意 → `POST /api/live` → 顯示 join link / QR + 倒數 TTL。
-- **Join link 放 fragment**：`https://<host>/#live=<roomId>`。Fragment 唔會送去 server（唔入 log、唔洩漏落 Referer），亦唔使 SPA 路徑 fallback。
+- **Join link 放 fragment**：`https://<host>/#live=<roomId>&k=<key>`（key 嘅來源見 §5.2.1）。Fragment 唔會送去 server（唔入 log、唔洩漏落 Referer），亦唔使 SPA 路徑 fallback。
 - **加入流程**：開 link → 同樣 opt-in → 連 WS → `hello`。
 - **地圖**：己方 marker（藍）+ 對方 marker（另一色，同 §4.4 插值）+ 對方 accuracy 圈。
 - **常駐 UI**（必要）：
@@ -262,12 +285,12 @@
 - **背景處理**：`visibilitychange → hidden` 時盡力送 `paused`；回前景送 `resume` 並檢查 WS，斷咗就重連。
 - **重連**：指數退避；房已散 / 過期 → 「分享已結束」。
 - **Wake Lock**：live share 期間申請（§4.5）；開始前提示耗電。
-- **部署前提**：呢個功能只喺有 Worker 嘅部署（Cloudflare）先存在；GitHub Pages 版本要隱藏入口（見 §6.2）。
+- **部署前提**：live share 需要 Worker。GitHub Pages 暫時保留（D11），所以有兩個做法，P4 時定：**B（建議）**Pages 前端跨域呼叫 Worker 嘅 `/api/*`（Worker 加 CORS 同 WebSocket `Origin` 白名單，build 變數 `VITE_LIVE_API` 指向 Worker）；**A** live share 只喺 Cloudflare 網址出現，Pages 版本隱藏入口。見 §6.2。
 
 ### 5.4 私隱 / 防濫用
 
 **私隱三項（D8，必做）**
-1. **明確 opt-in**：開始前講明「會以**明文**中轉你嘅實時座標經 i-here server、TTL X 分鐘、**邊個有 link 都睇到**」；同意先開始。畫面常駐「正在分享實時位置」+ 一鍵停止。
+1. **明確 opt-in**：開始前講明「你嘅實時座標會以**加密**方式經 i-here server 中轉（server 睇唔到內容）、TTL X 分鐘、**有完整 link 嘅人都睇到你嘅位置**」；同意先開始。畫面常駐「正在分享實時位置」+ 一鍵停止。
 2. **TTL 自動過期 + 可隨時 revoke**：避免一條 link 永久追蹤某人。
 3. **預設唔持久化座標**：DO in-memory，房間關閉即冇；唔寫座標 log。
 
@@ -276,8 +299,8 @@
 5. WS 做 `Origin` 檢查；訊息大小同頻率上限（§5.2）。
 6. Worker 唔記錄 body；**URL 唔含 `roomId`**（所以用 fragment + `hello`），咁 access log 都唔會有 bearer secret。
 
-**例外於 D10**：live share 期間座標會經我哋 server（明文），要喺 opt-in 文案、README、私隱聲明寫清楚。
-**合規提示**（**唔係法律意見**）：server 收到明文座標 = 處理個人資料，屬香港《個人資料（私隱）條例》(PDPO) 範圍。因為唔持久化，暴露面細；仍建議私隱聲明講明「實時分享嘅座標只 in-memory 中轉、唔儲存、TTL 後即銷毀」。
+**對 D10 嘅例外**：live share 期間，經我哋 server 嘅只有**密文**（加上 IP、時間、訊息大小）；要喺 opt-in 文案、README、私隱聲明寫清楚。
+**合規提示**（**唔係法律意見**）：server 只處理密文同連線元數據（IP 亦可能屬個人資料，仍然落入香港《個人資料（私隱）條例》(PDPO) 範圍）。E2EE 加唔持久化，暴露面比明文細好多；仍建議私隱聲明講明「server 睇唔到座標、唔儲存、TTL 後銷毀」。
 
 ### 5.5 驗收標準（P3）
 
@@ -288,7 +311,11 @@
 - [ ] **DO 冇留低座標**：用 `@cloudflare/vitest-pool-workers`（或 miniflare）測試，房間運作後 `storage.list()` 只有 alarm 到期時間，冇座標；Worker log 冇座標。
 - [ ] 第三個連線被拒；房主睇到加入人數，可以踢走。
 - [ ] 非法 / 過大 / 過頻訊息被拒（單元測試）。
-- [ ] opt-in 文案清楚講明明文中轉 + TTL + 「有 link 就睇到」。
+- [ ] opt-in 文案清楚講明加密中轉 + TTL + 「有完整 link 就睇到」。
+- [ ] E2EE 測試全部通過：往返、竄改、錯 key / 錯 `roomId`、重放（§5.2.1）。
+- [ ] DO 用亂數密文照樣中轉；代碼路徑唔解析 `lat` / `lng`。
+- [ ] 實機用 WhatsApp / 短訊傳 link，`#` 後面嘅 key 完整；缺 key 時顯示「連結唔完整」。
+- [ ] iOS 分頁被丟棄後還原，仍然可以重連（`sessionStorage`）。
 - [ ] `roomId` ≥128-bit；URL 不含 `roomId`。
 
 ---
@@ -326,10 +353,11 @@
 
 現況：`.github/workflows/deploy.yml` **已存在**（GitHub Pages）；`ci.yml` 已存在；Cloudflare Workers Builds 已連 repo。要決定嘅係：
 
-- **D11：對外正式網址（待決定）**。
-  - GitHub Pages **冇 Worker**，live share 喺嗰度做唔到；而已流通嘅分享連結全部指向 `iceninye.github.io/i-here/`。
-  - 建議：Cloudflare Workers 做正式網址；GitHub Pages **保留**直到舊連結冇人用，或者改成轉址頁；Pages 版本隱藏「實時分享」。
-  - 分享連結嘅 base 係 `location.href`：換網址之後，新連結指向新網址，舊連結仍然要有人服務。
+- **D11（已決定）：GitHub Pages 暫時保留**，唔搬網址、唔轉址；已流通嘅分享連結（`iceninye.github.io/i-here/?at=…`）照舊有效。
+  - GitHub Pages **冇 Worker**，所以 live share 要用其中一個方式（P4 時定，建議 B）：
+    - **B（建議）**：Pages 前端跨域呼叫 Cloudflare Worker 嘅 `/api/*`。Worker 要加 CORS（處理 `OPTIONS` preflight）同 WebSocket `Origin` 白名單（Pages 網址 + Cloudflare 預覽網址）；build 變數 `VITE_LIVE_API` 指向 Worker。好處：主網址有 live share，唔使搬網址。代價：跨域設定多一層；IP 同密文去 Worker 網域。
+    - **A**：live share 只喺 Cloudflare 網址出現，Pages 版本隱藏入口。
+  - 分享連結嘅 base 係 `location.href`：兩個網址都可以出連結，各自 serve 同一個 app。
 - **用邊個部署 Cloudflare**（二揀一，唔好兩個都做）：
   - **Workers Builds**（而家用緊）：push `main` 自動部署、PR 出預覽，**唔使喺 GitHub 放 API token**，但**冇手動 approval**。
   - **GitHub Actions + `wrangler-action`**：可以加 environment approval，但要放 `CLOUDFLARE_API_TOKEN`；而 environment 審批者功能**私人 repo 要付費計劃**（public repo 免費）。
@@ -342,7 +370,7 @@
 - [ ] Smoke test：`POST /api/live` 開到房；**經 `/api/live/ws` 嘅 WebSocket upgrade 成功**（驗證 static assets routing + WS）；DO migration 生效。
 - [ ] SPA 導航（例如重新整理）仍然回 `index.html`。
 - [ ] CI 綠；部署方式同 approval 取捨已寫入 README。
-- [ ] GitHub Pages 版本唔顯示實時分享入口（或已轉址）。
+- [ ] 選 B：Pages 版本跨域建房 + WebSocket 成功（CORS / `Origin` 通過）；選 A：Pages 版本唔顯示入口。
 
 ---
 
@@ -371,7 +399,7 @@ P5（全球化，D6）：backlog，未排期
 | 靜止定位（現況） | ✅ 已有 | 約 9–25 s 後 ≤±4.3 m（實際 1.9 m）；冷啟動頭幾秒可差 ~20 m | — | 座標只送政府 API |
 | 步行 / 車行定位 | ✅ P2（**未量度**） | **待 §4.0 量度**（假設戶外 GPS 良好） | **前景先定位**、~1 Hz | 純 client，安全 |
 | 「附近有咩」 | ✅ P2（冇食肆） | 跟 `searchNearby`（政府設施資料集） | API 速度；D2 | 座標只送政府 API |
-| 實時雙向分享 | ✅ P3（工程大） | 網絡延遲目標 p95 <300 ms；顯示延遲 ≥ GPS ~1 s | **雙方都要著屏前景**；免費額度約 57 個半小時房 / 日（估算） | 明文中轉（D7）+ 防濫用（D8、§5.4） |
+| 實時雙向分享 | ✅ P3（工程大） | 網絡延遲目標 p95 <300 ms；顯示延遲 ≥ GPS ~1 s | **雙方都要著屏前景**；免費額度約 57 個半小時房 / 日（估算） | 端對端加密（D7）+ 防濫用（D8、§5.4） |
 
 **準確性結論**：
 - **靜止**：已達標，但要講清楚係「約 9–25 s 後」。
@@ -382,7 +410,7 @@ P5（全球化，D6）：backlog，未排期
 **研究方向一句話**：真正決定成敗嘅唔係定位演算法（靜止已夠準），而係
 1. **PWA 前景限制**（切 App 就停）——用 UI 誠實呈現，同用 server 心跳而唔係 client 通知判斷對方狀態；
 2. **移動體驗**（速度推算、狀態機 hysteresis、有界外推、節流地名）——全部要靠真實紀錄 replay 調參，唔係靠估；
-3. **live share 嘅私隱 / 防濫用設計**（opt-in、TTL、revoke、唔持久化、防搶位、rate limit）。
+3. **live share 嘅私隱 / 防濫用設計**（E2EE、opt-in、TTL、revoke、唔持久化、防搶位、rate limit）。
 
 ---
 
@@ -391,14 +419,17 @@ P5（全球化，D6）：backlog，未排期
 | 風險 | 影響 | 對策 |
 |---|---|---|
 | PWA 無背景定位 | 移動 / 分享一鎖屏就停 | Wake Lock（opt-in）+ UI 明示限制 + server 心跳判斷「對方已暫停」 |
-| 明文中轉座標（D7） | PDPO / stalking 暴露 | opt-in + TTL + revoke + 唔持久化 + URL 唔含 roomId；可選 D7+（fragment key E2EE） |
+| Key 洩漏 = link 洩漏（D7 E2EE） | 有完整 link 嘅人都睇到位置 | opt-in 文案講明；TTL；房主可踢 / 停；key 喺 fragment 唔送 server，加入後清走網址 |
+| 分享 App 剝走 `#` fragment | 加入者冇 key，連唔到 | 顯示「連結唔完整」；實機用 WhatsApp / 短訊測；失敗再考慮 QR / 手動輸入 |
+| iOS 丟棄分頁令 key 遺失 | 回前景要重新攞 link | key 放 `sessionStorage`（待實機驗證） |
+| E2EE 唔防惡意 JS | 被入侵嘅部署可以偷 key | 部署帳戶開 2FA、最小權限；README 講明限制 |
 | Link 被別人先開（搶位） | 非預期嘅人睇到位置 | 房主見加入人數、可踢、滿員拒絕、`roomId` 128-bit |
 | DO 免費額度 | 約 57 個半小時房 / 日（估算） | TTL 短、房間關閉即釋放；監控；必要時升 paid |
 | 刷 `POST /api/live` | DO 被刷爆 | rate limit + 房間總數上限 |
 | WebSocket 同 static assets routing 互動未驗證 | 部署後 live share 連唔到 | P4 smoke test 必須覆蓋 WS upgrade |
 | `previews` 內 DO 支援未知 | PR 預覽測唔到 live share | 實測；唔得就正式環境測 |
 | 公共 Nominatim 政策（D6） | 多用戶被封 | D6 降為 backlog；自架 / 商業 geocoder |
-| 兩個正式網址（Pages vs Workers） | 功能分叉、舊分享連結 | D11；Pages 隱藏 live share、保留或轉址 |
+| Pages 同 Workers 兩個網址（D11） | CORS / `Origin` 設定出錯、功能分叉 | 選 B 時 smoke test 覆蓋跨域；選 A 時隱藏入口 |
 | iOS 主畫面 PWA Wake Lock（<18.4 不可靠） | 著屏失效 | 實機驗證；降級提示 |
 | searchNearby 回大量項 | client 處理 / API rate | client filter + rank；節流；只喺需要時查 |
 | 隧道無訊號 | 定位中斷 | 優雅降級 + 最後已知位置 |
@@ -423,6 +454,7 @@ P5（全球化，D6）：backlog，未排期
 
 **P3**
 - `worker/liveShareRoom.ts`（DO）
+- `src/lib/liveCrypto.ts` + `liveCrypto.test.ts`（E2EE：產生 key、加解密、`seq`）
 - `src/lib/liveShare.ts`（WS client + 協議）、`src/hooks/useLiveShare.ts`
 - `src/components/LiveShareBanner.tsx` + opt-in dialog
 - `src/components/MapView.tsx`（對方 marker）
@@ -458,3 +490,16 @@ P5（全球化，D6）：backlog，未排期
 | 23 | §7 | P2 → P4 → P3 | 缺 §4.0；D6 冇位置 | — | 加 §4.0；加 P5 backlog |
 
 **冇改嘅（原稿正確）**：D1–D4、D8（私隱三項）、D10 主體、DO + WebSocket 作首選、PWA 無背景定位嘅硬限制、P2 → P4 → P3 順序、`Fix` 欄位描述、融合已移除嘅結論、commit `ee56cef`。
+
+---
+
+## 12. 決策更新（2026-10-31，修訂版定稿後）
+
+| # | 決定 | 方案改動 |
+|---|---|---|
+| D6 | **降為 backlog（P5）** | §2.1 改為「已決定」；風險表保留 Nominatim 一項 |
+| D7 | **採用 E2EE**（取消原稿「明文中轉」）；§11 第 8 項嘅「決定交返用戶」已有答案 | §2.2 重寫；新增 §5.2.1（key 放 fragment、AES-GCM、`roomId` 做 additionalData、`seq` 防重放、`sessionStorage`）；§5.2 訊息改為 `{ iv, ct }`；§5.4 opt-in 文案、PDPO 提示、§5.5 驗收、§9 風險、§10 檔案 |
+| D11 | **GitHub Pages 暫時保留**，唔搬網址 | §6.2 改為已決定；live share 嘅 A / B 做法 P4 時定（建議 B：Pages 跨域呼叫 Worker）；§5.3、§6.3、§9 同步 |
+
+**仍然待確認**：D11 嘅 A / B（P4 時，需要 CORS / `Origin` smoke test）；`sessionStorage` 喺 iOS 分頁還原後嘅行為（實機）；`#` fragment 經 WhatsApp / 短訊是否完整（實機）。
+**未開始**：P2 / P4 / P3 全部未動工，等你話事。
