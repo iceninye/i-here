@@ -7,7 +7,7 @@ import { circlePolygon, type Fix } from '../lib/geo';
 interface Props {
   fix: Fix | null;
   is3D: boolean;
-  /** 收件人模式：家人分享過嚟嘅位置 */
+  /** 收件人模式：對方分享過嚟嘅位置 */
   sharedPin?: { lat: number; lng: number; label?: string } | null;
 }
 
@@ -103,7 +103,7 @@ export function MapView({ fix, is3D, sharedPin }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !sharedPin) return;
-    const m = new maplibregl.Marker({ element: markerEl(sharedPin.label ? '家人' : '位置', 'pin--shared'), anchor: 'bottom', offset: DOT_OFFSET })
+    const m = new maplibregl.Marker({ element: markerEl(sharedPin.label ? '對方' : '位置', 'pin--shared'), anchor: 'bottom', offset: DOT_OFFSET })
       .setLngLat([sharedPin.lng, sharedPin.lat])
       .addTo(map);
     return () => { m.remove(); };

@@ -150,3 +150,12 @@ button:focus-visible, a:focus-visible { outline: 4px solid #ffbf00; outline-offs
 .card__source { font-size: 0.85rem; margin-top: 6px !important; color: var(--ink-2); }
 .debug__buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .debug__copy:disabled { opacity: 0.4; }
+
+/* ---- App 內置瀏覽器提示 ---- */
+.banner { pointer-events: auto; margin-top: 8px; padding: 12px 16px; border-radius: 16px; background: var(--warn-bg); color: var(--warn-ink); box-shadow: var(--shadow); }
+.banner p { margin: 0; }
+.banner__title { font-weight: 800; font-size: 1.05rem; }
+.banner__text { margin-top: 4px !important; font-size: 0.95rem; line-height: 1.4; }
+.banner__buttons { display: flex; gap: 8px; margin-top: 8px; }
+.banner__btn { min-height: 48px; padding: 0 16px; border-radius: 12px; border: 2px solid var(--warn-ink); background: var(--warn-ink); color: #fff; font: inherit; font-weight: 700; }
+.banner__btn--ghost { background: transparent; color: var(--warn-ink); }

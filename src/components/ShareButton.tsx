@@ -69,7 +69,7 @@ export function ShareButton({ fix, place, failed }: Props) {
         <span>{fix ? '分享我的位置' : failed ? '未能取得位置' : '正在定位…'}</span>
       </button>
       <p id="share-hint" className="sr-only">
-        會打開分享選單，可以用 WhatsApp、短訊或其他程式將你的位置傳送給家人
+        會打開分享選單，可以用 WhatsApp、短訊或其他程式傳送你的位置
       </p>
       <p className="share-result" role="status" aria-live="polite">
         {result === 'shared' && '✅ 已分享'}
@@ -79,7 +79,7 @@ export function ShareButton({ fix, place, failed }: Props) {
       {fallbackOpen && (
         <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
           <div className="sheet__panel">
-            <h2 id="sheet-title" className="sheet__title">傳送位置給家人</h2>
+            <h2 id="sheet-title" className="sheet__title">傳送位置</h2>
             <a className="sheet__btn sheet__btn--wa" href={whatsappUrl(text)} target="_blank" rel="noopener">
               <span aria-hidden="true">💬</span> WhatsApp
             </a>
