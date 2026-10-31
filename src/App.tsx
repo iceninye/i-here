@@ -58,6 +58,8 @@ export default function App() {
             <span aria-hidden="true">{is3D ? '🗺️' : '🏢'}</span> {is3D ? '平面地圖' : '立體圖'}
           </button>
         </div>
+        {/* 版本：手機有時會跑緊舊快取，貼問題嚟嘅時候一眼睇到係邊個版本（日期時間係 UTC，香港 +8 小時） */}
+        <p className="version">版本 {__BUILD_ID__}</p>
       </footer>
     </div>
   );
