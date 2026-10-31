@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { wgs84ToHK80Local } from './hk80';
 import alsGrandMayfair from './__fixtures__/als-grand-mayfair.json';
 import alsStreet from './__fixtures__/als-street-query.json';
+import alsAAccess from './__fixtures__/als-kam-sheung-road-a-access.json';
+import identifyAAccess from './__fixtures__/identify-kam-sheung-road-a-access.json';
 import identifyGrandMayfair from './__fixtures__/identify-grand-mayfair.json';
 import nearbyExitD from './__fixtures__/searchnearby-kam-sheung-road-exit-d.json';
 import identifyKamSheung from './__fixtures__/identify-kam-sheung-road.json';
@@ -14,6 +16,8 @@ import {
   pickAlsAddress, pickLandmarks, pickTitle, reverseGeocode, type PlaceCandidate,
 } from './reverseGeocode';
 
+/** 實測位置：錦上路站 A 出口（±3 m；官方坐標轉換 API 回 hkE 824534.201 / hkN 832883.635） */
+const exitA = { x: 824534.201, y: 832883.635, lat: 22.4353086, lng: 114.0628922 };
 /**
  * 實測：錦上路站 D 出口。手機第一次查地址用嘅係最初嗰個粗略 fix（±23.8 m，22.4342849, 114.0635424
  * → HK80 824601, 832770），離你真實位置約 26 m；之後先收窄到 ±2 m（22.434139, 114.063738）。
@@ -194,6 +198,48 @@ describe('Kam Sheung Road station exit D (real captures, ±2 m fix)', () => {
     expect(r?.address).toBe('新界元朗區錦河路29號柏瓏');
     const alsCall = fetchFn.mock.calls.find(c => String(c[0]).includes('als.gov.hk'))!;
     expect((alsCall[1]?.headers as Record<string, string>)['Accept-Language']).toBe('en,zh-Hant');
+  });
+});
+
+describe('Kam Sheung Road station exit A (real captures, ±3 m fix)', () => {
+  it('identify answers with the exit itself (type FACI / addressType F), 10 m away', () => {
+    const list = parseIdentify(identifyAAccess, exitA);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ name: '港鐵錦上路站-A進出口', kind: 'transport', address: '新界元朗錦田香港鐵路錦上路站', x: 824533, y: 832894 });
+    expect(Math.round(list[0].distanceM)).toBe(10);
+    const title = pickTitle(list)!;
+    expect(title.name).toBe('港鐵錦上路站-A進出口');
+  });
+
+  it('searchNearby (exit A capture) agrees: the exit itself is the closest eligible place', () => {
+    const all = [...parseIdentify(identifyAAccess, exitA), ...parseNearby(nearbyExitD, exitA)];
+    expect(pickTitle(all)?.name).toBe('港鐵錦上路站-A進出口');
+  });
+
+  // ALS 嘅第一個結果係 165 m 外嘅「MTR KAM TIN BUILDING」（真實回應）。原回應只有英文，
+  // 所以呢度用真實回應嘅座標，加一個合成嘅中文地址區塊，只係為咗測試「距離核對」。
+  const withChinese = {
+    SuggestedAddress: [
+      { ...alsAAccess.SuggestedAddress[0], Address: { PremisesAddress: {
+        ...alsAAccess.SuggestedAddress[0].Address.PremisesAddress,
+        ChiPremisesAddress: { Region: '新界', ChiDistrict: { DcDistrict: '元朗區' }, ChiStreet: { StreetName: '錦河路', BuildingNoFrom: '23' }, BuildingName: '港鐵錦田大廈' },
+      } } },
+    ],
+  };
+
+  it('the ALS match is 165 m from the exit: rejected against the place, but the old check (250 m from you) accepted it', () => {
+    expect(pickAlsAddress(withChinese, { x: exitA.x, y: exitA.y }, 250)).toBe('新界元朗區錦河路23號港鐵錦田大廈'); // 以前會當成呢個出口嘅地址
+    expect(pickAlsAddress(withChinese, { x: 824533, y: 832894 }, 60)).toBeUndefined();
+  });
+
+  it('end to end: the exit keeps identify’s own address instead of the wrong building', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/identify')) return new Response(JSON.stringify(identifyAAccess));
+      if (url.includes('als.gov.hk')) return new Response(JSON.stringify(withChinese));
+      throw new TypeError('Failed to fetch');
+    }));
+    const r = await reverseGeocode({ x: exitA.x, y: exitA.y, source: 'landsd-api' }, exitA);
+    expect([r?.name, r?.address]).toEqual(['港鐵錦上路站-A進出口', '新界元朗錦田香港鐵路錦上路站']);
   });
 });
 

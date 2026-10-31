@@ -16,6 +16,9 @@ export interface PlaceCandidate {
   /** 同使用者嘅距離（米）；冇座標時係 NaN */
   distanceM: number;
   kind: PlaceKind;
+  /** 呢個地方本身嘅 HK80 座標（街道冇）。ALS 要用佢核對「同名但唔同地方」 */
+  x?: number;
+  y?: number;
 }
 
 export type PlaceSource = 'identify' | 'nearby' | 'osm';
@@ -138,6 +141,12 @@ function distanceTo(o: Record<string, unknown>, origin: Origin): number {
   return NaN;
 }
 
+function ownXY(o: Record<string, unknown>): { x?: number; y?: number } {
+  const x = num(o.x);
+  const y = num(o.y);
+  return x !== undefined && y !== undefined && x > 790000 && x < 880000 && y > 790000 && y < 850000 ? { x, y } : {};
+}
+
 /* ---------------- identify ---------------- */
 
 /**
@@ -164,6 +173,7 @@ export function parseIdentify(json: unknown, origin: Origin): PlaceCandidate[] {
         address: str(item.caddress) ?? str(item.eaddress),
         distanceM: Number.isFinite(d) ? d : 0,
         kind: classifyName(name, str(item.addressType) ?? 'B'),
+        ...ownXY(item),
       });
     }
   }
@@ -202,6 +212,7 @@ export function parseNearby(json: unknown, origin: Origin): PlaceCandidate[] {
       address: NEARBY_ADDR_KEYS.map(k => str(item[k])).find(Boolean),
       distanceM: distanceTo(item, origin),
       kind,
+      ...ownXY(item),
     });
   }
   return out;
@@ -334,13 +345,23 @@ async function tryOsm(origin: Origin, signal?: AbortSignal): Promise<PlaceCandid
   }
 }
 
+/**
+ * ALS 嘅文字配對會俾「最似」嘅地址，唔一定係同一個地方：實測 A 出口（港鐵錦上路站-A進出口）嘅第一個結果係
+ * 165 m 外嘅「MTR KAM TIN BUILDING」。所以要用「呢個地方自己嘅座標」去核對，而且只收好近嘅（同一幢 / 同一屋苑）。
+ * 實測：柏瓏 identify 座標同 ALS 座標只差 4 m。
+ */
+const ALS_MAX_FROM_PLACE_M = 60;
+
 async function lookupAls(title: PlaceCandidate, p: HK80Point, signal?: AbortSignal): Promise<string | undefined> {
+  // 冇自己座標（OpenStreetMap 後備）就用你嘅位置核對
+  const at = title.x !== undefined && title.y !== undefined ? { x: title.x, y: title.y } : { x: p.x, y: p.y };
   try {
     const q = encodeURIComponent(title.address ? `${title.name} ${title.address}` : title.name);
     // ALS 嘅輸出語言由 Accept-Language 決定（唔傳就只回英文，實測）；呢個 header 屬 CORS safelisted，唔使 preflight
     return pickAlsAddress(
       await fetchJson(`${ENDPOINTS.als}?q=${q}&n=5`, { signal, timeoutMs: 4000, name: 'ALS', headers: { 'Accept-Language': 'en,zh-Hant' } }),
-      p,
+      at,
+      ALS_MAX_FROM_PLACE_M,
     );
   } catch (e) {
     if (signal?.aborted) throw e;

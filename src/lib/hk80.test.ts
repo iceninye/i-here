@@ -1,5 +1,6 @@
 import proj4 from 'proj4';
 import { describe, expect, it } from 'vitest';
+import officialA from './__fixtures__/transform-kam-sheung-road-a.json';
 import { parseTransformResponse, wgs84ToHK80Local } from './hk80';
 
 describe('wgs84ToHK80Local', () => {
@@ -28,5 +29,16 @@ describe('parseTransformResponse', () => {
     expect(parseTransformResponse({ hkE: 1, hkN: 2 })).toBeNull();
     expect(parseTransformResponse({ foo: 1 })).toBeNull();
     expect(parseTransformResponse(null)).toBeNull();
+  });
+});
+
+describe('official transform API (real capture, Kam Sheung Road station exit A)', () => {
+  // https://www.geodetic.gov.hk/transform/v2/?inSys=wgsgeog&outSys=hkgrid&lat=22.4353086&long=114.0628922 → 200, 312 ms
+  it('parses the real response ({ hkN, hkE })', () => {
+    expect(parseTransformResponse(officialA)).toEqual({ x: 824534.201, y: 832883.635 });
+  });
+  it('the local proj4 conversion agrees with it to well under 10 cm at this point', () => {
+    const local = wgs84ToHK80Local(22.4353086, 114.0628922);
+    expect(Math.hypot(local.x - 824534.201, local.y - 832883.635)).toBeLessThan(0.1);
   });
 });
