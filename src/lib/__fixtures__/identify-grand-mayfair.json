@@ -1,0 +1,61 @@
+{
+  "_fixture": "Abridged from a real www.map.gov.hk identify response captured at Kam Sheung Road Station exit D (x=824601, y=832770, lang=zh). Kept verbatim: the estate item (addressType S) with 3 of its 14 hashTag entries, 1 of 3 nested facility groups trimmed to the first entry; the LOT result is kept as captured (it has no cname/ename).",
+  "results": [
+    {
+      "type": "ADDRESS",
+      "eheader": "Estate / Village / Place Name",
+      "cheader": "屋苑/村/地方名稱",
+      "addressInfo": [
+        {
+          "ename": "Grand Mayfair",
+          "cname": "柏瓏",
+          "eaddress": "29 KAM HO ROAD",
+          "caddress": "錦河路29號",
+          "nameStatus": "E",
+          "otherEname": [],
+          "otherCname": [],
+          "addressType": "S",
+          "x": 824522,
+          "y": 832773,
+          "uniqueId": "1910053327",
+          "hashTag": [
+            { "tagType": "", "edisplay": "Grand Mayfair", "cdisplay": "柏瓏", "addressType": "B", "id": "1910260320" },
+            { "tagType": "", "edisplay": "Phase 1 Tower 1", "cdisplay": "第1期 第1座", "addressType": "B", "id": "1910260193" },
+            { "tagType": "", "edisplay": "Phase 1 Tower 10", "cdisplay": "第1期 第10座", "addressType": "B", "id": "1910260197" }
+          ],
+          "facility": [
+            {
+              "type": "FACI",
+              "eheader": "Car Parks",
+              "cheader": "停車場",
+              "addressInfo": [
+                {
+                  "ename": "Kam Sheung Road Station Car Park",
+                  "cname": "錦上路車站停車場",
+                  "eaddress": "No. 29 Kam Ho Road, Kam Tin, Yuen Long, New Territories.",
+                  "caddress": "新界元朗錦田錦河路29號",
+                  "nameStatus": null,
+                  "addressType": "F",
+                  "x": 824532.949,
+                  "y": 832777.169,
+                  "uniqueId": "90008847",
+                  "facility": null,
+                  "bdcsuid": null
+                }
+              ]
+            }
+          ],
+          "bdcsuid": null
+        }
+      ]
+    },
+    {
+      "type": "LOT",
+      "eheader": "Lot",
+      "cheader": "地段",
+      "addressInfo": [
+        { "LTYPE": "LOT", "LOTNAME": "DEMARCATION DISTRICT 103 LOT", "LOTID": "1810101879", "PRN": "D3864927", "LOT_FULLNAME": "DD103 1040" }
+      ]
+    }
+  ]
+}

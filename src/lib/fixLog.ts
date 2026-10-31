@@ -14,6 +14,8 @@ const listeners = new Set<() => void>();
 
 export function logFix(f: Fix): void {
   const prev = samples[samples.length - 1];
+  // 取樣同追蹤兩個 watch 可能報告同一個 fix（實測 CSV 有成對重複）
+  if (prev && prev.timestamp === f.timestamp && prev.lat === f.lat && prev.lng === f.lng) return;
   const dt = prev ? (f.timestamp - prev.timestamp) / 1000 : 0;
   samples = [...samples, { ...f, dt }].slice(-300);
   listeners.forEach(l => l());

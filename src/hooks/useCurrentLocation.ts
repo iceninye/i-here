@@ -23,6 +23,8 @@ export interface CurrentLocation {
 
 /** 移動超過呢個距離先重新查地址（避免企喺度 GPS 飄移不停 call API） */
 const RESOLVE_MOVE_M = 40;
+/** 精度大幅改善時，兩次查地址最少相隔 */
+const RESOLVE_SHARPEN_MIN_MS = 2000;
 /** 兩次查地址最少相隔 */
 const RESOLVE_MIN_INTERVAL_MS = 15000;
 /** 追蹤模式下，移動超過呢個距離或精度明顯變好先更新 fix（減少 re-render） */
@@ -53,7 +55,12 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
     const prev = lastResolved.current;
     if (!force && prev) {
       const moved = haversineM(prev.fix.lat, prev.fix.lng, f.lat, f.lng);
-      if (moved < RESOLVE_MOVE_M || Date.now() - prev.at < RESOLVE_MIN_INTERVAL_MS) return;
+      // 第一個 fix 通常好粗略（實測：±24 m 嗰個實際差 ~26 m，約 17 秒後先收窄到 ±3 m）：
+      // 精度大幅改善而位置動咗，就算未行夠 40 m 都要重新查
+      const sharpened = f.accuracy * 2.5 < prev.fix.accuracy && moved > 10;
+      const elapsed = Date.now() - prev.at;
+      // 精度改善咗就唔受 15 秒間隔限制（只要隔 2 秒，避免連環請求）；否則要行夠 40 m 同相隔夠耐
+      if (sharpened ? elapsed < RESOLVE_SHARPEN_MIN_MS : moved < RESOLVE_MOVE_M || elapsed < RESOLVE_MIN_INTERVAL_MS) return;
     }
     lastResolved.current = { fix: f, at: Date.now() };
     resolveCtrl.current?.abort();

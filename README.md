@@ -136,10 +136,18 @@ src/
 wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
 ```
 
+## 📏 定位實測（iPhone，錦上路站 D 出口，靜止約 75 秒）
+
+- 第一個 fix：±23.8 m，**真實誤差約 26 m**（同畫面上嘅「±24 米」吻合，所以 ±15 m 以上唔再叫「很準確」）。
+- 約 17 秒後收窄到 ±3 m；之後靜止時抖動只有約 1–2 m（±2–5 m）。
+- 所以：**露天靜止時唔需要自己平均 / 平滑**，OS 融合已經夠好；關鍵係**精度變好之後要重新查地址**（以前要行夠 40 m 先重查，會一直停喺粗略位置嘅結果，標題變咗 79 m 外嘅屋苑）。
+- 未量度：街道峽谷（旺角）、室內、行路中。
+
 ## ⚠️ 已知限制 / 待驗證
 
 - `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-*.json`：錦上路站、天水圍站（節錄版），天福路、宏達路（完整））。
-- `ALS` 只見到英文地址部分（`als-street-query.json`，節錄版）；中文地址欄位 `ChiPremisesAddress` 仲未見過真實回應。
+- `ALS` 嘅輸出語言由 `Accept-Language` 決定：以前冇傳，只回英文（`als-grand-mayfair.json`，完整）；現在傳 `en,zh-Hant`，中文欄位 `ChiPremisesAddress` 仲未見過真實回應，要用 `?debug=1` 確認。
+- `searchNearby` 真實格式已確認（`searchnearby-kam-sheung-road-exit-d.json`，43 項中揀 16 項原文）：`[{ name, address, x, y, additionalInfoKey[], additionalInfoValue[] }]`。
 - `searchNearby` 同 `ALS` 仲未有完整真實 fixture：`searchNearby` 嘅 parser 只收「陣列 + 明確 key」。用 `?debug=1` → 「原始回應：searchNearby」可以錄低完整回應，換入測試。
 - **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」（第一行 `build:` 係版本，手機有時會跑緊舊快取，貼紀錄時請連埋呢行）：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
 - 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片）：開立體圖時會向 OpenFreeMap 要圖磚，等於將畫面範圍告訴佢；之後會改用自己託管嘅資料。

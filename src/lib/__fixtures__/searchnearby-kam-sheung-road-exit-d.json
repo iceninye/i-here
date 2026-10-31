@@ -1,0 +1,18 @@
+[
+  {"address":"新界元朗錦田錦河路29號","additionalInfoValue":["元朗區"],"name":"錦上路車站停車場","x":824532.949,"additionalInfoKey":["地區"],"y":832777.169},
+  {"address":"","additionalInfoValue":["其它: 5<br/>"],"name":"東匯路","x":824805.4196,"additionalInfoKey":["不收費用的泊車位數目"],"y":832765.4564},
+  {"address":"","additionalInfoValue":["其它: 3<br/>"],"name":"錦上路","x":825147.8699,"additionalInfoKey":["不收費用的泊車位數目"],"y":833011.1588},
+  {"address":"新界元朗錦田錦河路29號","additionalInfoValue":["元朗區","中速,快速","0","183","5","0","中速(IEC62196),快速(CCS DC COMBO)"],"name":"錦上路車站停車場","x":824533,"additionalInfoKey":["地區","充電器類型","標準數目","中速數目","快速數目","高速數目","備註"],"y":832777},
+  {"address":"港鐵錦上路站KSR9號舖(近港鐵大樓)","additionalInfoValue":["元朗"],"name":"7-11便利店-元朗","x":824639,"additionalInfoKey":["地區"],"y":832720},
+  {"address":"港鐵錦上路站KSR4號舖(近皇崗巴士站)","additionalInfoValue":["元朗"],"name":"7-11便利店-元朗","x":824571,"additionalInfoKey":["地區"],"y":832858},
+  {"address":"錦上路站","additionalInfoValue":["港鐵公司","充電池","元朗"],"name":"回收機構及收集點： 港鐵公司","x":824588,"additionalInfoKey":["回收機構名稱","收集物料類別","地區"],"y":832830},
+  {"address":"新界元朗錦田香港鐵路錦上路站","additionalInfoValue":["元朗"],"name":"港鐵錦上路站-D進出口","x":824620,"additionalInfoKey":["地區"],"y":832757},
+  {"address":"新界元朗錦田香港鐵路錦上路站","additionalInfoValue":["元朗"],"name":"港鐵錦上路站-C進出口","x":824641,"additionalInfoKey":["地區"],"y":832771},
+  {"address":"新界元朗錦田香港鐵路錦上路站","additionalInfoValue":["元朗"],"name":"港鐵錦上路站-A進出口","x":824533,"additionalInfoKey":["地區"],"y":832894},
+  {"address":"新界元朗錦田香港鐵路錦上路站","additionalInfoValue":["元朗"],"name":"港鐵錦上路站-B進出口","x":824552,"additionalInfoKey":["地區"],"y":832904},
+  {"address":"港鐵錦上路站近 D出口","additionalInfoValue":["元朗區","元朗","星期一至五: 上午10:00<br>星期六: 上午 10:00"],"name":"編號662郵箱","x":824631.41910501,"additionalInfoKey":["地區","分區","最後接收箱時間"],"y":832762.71956742},
+  {"address":"新界元朗錦田","additionalInfoValue":["元朗"],"name":"錦上路公廁","x":824763,"additionalInfoKey":["地區"],"y":832748},
+  {"address":"新界錦上路站","additionalInfoValue":["運輸/口岸及相關設施","新界-元朗","港鐵公司","MTR Free Wi-Fi","9"],"name":"Wi-Fi.HK 熱點位置: 錦上路站","x":824596.7,"additionalInfoKey":["場所類別","地區","參與機構","網絡名稱","熱點數量"],"y":832823.9},
+  {"address":"元朗錦上路錦上路站","additionalInfoValue":["元朗","HONG KONG TELECOMMUNICATIONS (HKT) LIMITED","2.4GHz"],"name":"已登記的WiFi 熱點: Hong Kong Telecommunications (HKT) Limited (APID 04678)","x":824588,"additionalInfoKey":["地區","服務供應商","使用中的頻段"],"y":832830},
+  {"address":"新界元朗錦田錦田戲院大廈地下","additionalInfoValue":["元朗"],"name":"惠康超級市場-錦田","x":824686,"additionalInfoKey":["地區"],"y":833434}
+]
