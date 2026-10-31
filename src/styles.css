@@ -116,8 +116,10 @@ body { background: var(--bg); overscroll-behavior: none; }
   .maplibregl-ctrl-attrib { background: var(--surface) !important; color: var(--ink-2) !important; }
   .maplibregl-ctrl-attrib a { color: var(--brand) !important; }
 }
+/* 地圖版權（MapLibre 嘅 ⓘ）放喺底欄上面，唔俾底欄蓋住 */
+.map-wrap .maplibregl-ctrl-bottom-right, .map-wrap .maplibregl-ctrl-bottom-left { bottom: var(--bottom-h, 15rem); z-index: 3; }
 .recenter-btn {
-  position: absolute; right: var(--sp-3); bottom: calc(14rem + var(--safe-b)); z-index: 2;
+  position: absolute; right: var(--sp-3); bottom: calc(var(--bottom-h, 15rem) + 44px); z-index: 2;
   display: inline-flex; align-items: center; gap: var(--sp-2);
   min-height: 56px; padding: 0 18px; border-radius: var(--r-pill); border: 2px solid var(--brand);
   background: var(--surface); color: var(--brand); font: inherit; font-size: var(--text-base); font-weight: 700;

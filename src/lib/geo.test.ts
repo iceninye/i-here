@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GeoError, acquireBestFix, fuseFixes, isInHongKong, rejectOutliers, type Fix } from './geo';
+import { GeoError, acquireBestFix, haversineM, isInHongKong } from './geo';
 
 type Success = (p: GeolocationPosition) => void;
 type Failure = (e: GeolocationPositionError) => void;
@@ -71,83 +71,32 @@ describe('isInHongKong', () => {
   });
 });
 
-const mkFix = (lat: number, lng: number, accuracy: number, timestamp = 1): Fix =>
-  ({ lat, lng, accuracy, timestamp });
+describe('acquireBestFix does not blend fixes (real cold start at Kam Sheung Road station exit D)', () => {
+  // 實測紀錄：頭 9 個 fix（±16 → ±4.3 m）。之後 60 秒穩定喺 22.4341455, 114.0637469（±2.5 m）。
+  const rows: [number, number, number][] = [
+    [22.4340508, 114.0635697, 16.0], [22.4340289, 114.0635782, 16.4], [22.4340446, 114.0635610, 14.7],
+    [22.4341482, 114.0635971, 10.3], [22.4341832, 114.0636196, 9.1], [22.4342159, 114.0636328, 9.5],
+    [22.4342253, 114.0636405, 10.5], [22.4342491, 114.0636536, 9.4], [22.4341571, 114.0637333, 4.3],
+  ];
+  const settled = { lat: 22.4341455, lng: 114.0637469 };
 
-describe('fuseFixes', () => {
-  it('returns null for empty input and the fix itself for a single sample', () => {
-    expect(fuseFixes([])).toBeNull();
-    const only = mkFix(22.3, 114.1, 40);
-    expect(fuseFixes([only])).toBe(only);
-  });
-
-  it('ignores junk (non-finite / zero) accuracies', () => {
-    expect(fuseFixes([mkFix(22.3, 114.1, 0), mkFix(22.3, 114.1, NaN)])).toBeNull();
-  });
-
-  it('weights toward the more accurate fix and tightens the radius', () => {
-    const fused = fuseFixes([
-      mkFix(22.300, 114.100, 100),
-      mkFix(22.301, 114.100, 10),
-    ])!;
-    // 10m 準確嘅 fix 應該主導緯度
-    expect(fused.lat).toBeCloseTo(22.301, 4);
-    expect(fused.lng).toBeCloseTo(114.100, 6);
-    // 融合精度好過最準嘅單獨 fix（10m）
-    expect(fused.accuracy).toBeLessThan(10);
-    expect(fused.accuracy).toBeGreaterThan(0);
-  });
-
-  it('takes the latest timestamp', () => {
-    const fused = fuseFixes([
-      mkFix(22.3, 114.1, 30, 100),
-      mkFix(22.3, 114.1, 30, 500),
-    ])!;
-    expect(fused.timestamp).toBe(500);
-  });
-});
-
-describe('rejectOutliers', () => {
-  it('leaves fewer than 3 samples untouched', () => {
-    const two = [mkFix(22.3, 114.1, 20), mkFix(22.9, 114.9, 20)];
-    expect(rejectOutliers(two)).toBe(two);
-  });
-
-  it('drops a far, low-accuracy fix but keeps a tight cluster', () => {
-    const a = mkFix(22.30000, 114.100, 15);
-    const b = mkFix(22.30005, 114.100, 15); // ~5m away
-    const far = mkFix(22.31000, 114.100, 200); // ~1.1km away
-    const kept = rejectOutliers([a, b, far]);
-    expect(kept).toHaveLength(2);
-    expect(kept).toContain(a);
-    expect(kept).toContain(b);
-    expect(kept).not.toContain(far);
-  });
-
-  it('never rejects everything', () => {
-    // 全部一模一樣嘅準確度 —— 冇離群，全部保留
-    const same = [
-      mkFix(22.3, 114.1, 50),
-      mkFix(22.3, 114.1, 50),
-      mkFix(22.3, 114.1, 50),
-    ];
-    expect(rejectOutliers(same)).toHaveLength(3);
-  });
-});
-
-describe('acquireBestFix fusion', () => {
-  it('resolves a fused fix tighter than any single sample when the window ends', async () => {
+  it('resolves the single most accurate fix when the window ends, with its own accuracy (no fused ±2.9 m)', async () => {
     vi.useFakeTimers();
     const g = fakeGeo();
-    const p = acquireBestFix({ geolocation: g.geo, windowMs: 1000 });
-    g.pos(22.300, 114.100, 40);
-    g.pos(22.300, 114.100, 45);
-    g.pos(22.300, 114.100, 50);
-    vi.advanceTimersByTime(1000);
+    const p = acquireBestFix({ geolocation: g.geo, windowMs: 10000, goodAccuracyM: 0 }); // 0：唔提早結束，睇成個窗
+    rows.forEach(([la, lo, ac]) => g.pos(la, lo, ac));
+    vi.advanceTimersByTime(10000);
     const fix = await p;
-    // 三個聚集嘅樣本融合後精度應好過最準嘅單獨 fix（40m）
-    expect(fix.accuracy).toBeLessThan(40);
-    expect(fix.accuracy).toBeGreaterThan(0);
+    expect([fix.lat, fix.lng, fix.accuracy]).toEqual([22.4341571, 114.0637333, 4.3]);
+    expect(haversineM(fix.lat, fix.lng, settled.lat, settled.lng)).toBeLessThan(2.5); // 實際只差 ~1.9 m
     vi.useRealTimers();
+  });
+
+  it('with the default 30 m threshold it stops at the first fix and returns exactly that fix', async () => {
+    const g = fakeGeo();
+    const p = acquireBestFix({ geolocation: g.geo, windowMs: 10000 });
+    rows.forEach(([la, lo, ac]) => g.pos(la, lo, ac));
+    const fix = await p;
+    expect([fix.lat, fix.lng, fix.accuracy]).toEqual([22.4340508, 114.0635697, 16.0]);
   });
 });

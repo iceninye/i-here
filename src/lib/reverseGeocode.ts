@@ -101,8 +101,9 @@ export function classifyName(name: string, addressType?: string | null): PlaceKi
   if (addressType === 'ST') return 'street';
   if (TRANSPORT.test(name)) return 'transport';
   if (addressType === 'S' || addressType === 'P') return 'estate';
-  if (ESTATE.test(name)) return 'estate';
+  // 店舖要先試：「醫務中心」「…廣場店」都含屋苑字眼，但係舖頭（標題最遠 50 m，屋苑 300 m）
   if (SHOP.test(name)) return 'shop';
+  if (ESTATE.test(name)) return 'estate';
   if (BUILDING.test(name) || addressType === 'B') return 'building';
   if (STREET.test(name)) return 'street';
   return addressType ? 'other' : 'facility';
