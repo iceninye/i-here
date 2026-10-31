@@ -134,6 +134,15 @@ body { background: var(--bg); overscroll-behavior: none; }
   box-shadow: var(--shadow-sm); border: 2px solid #fff;
 }
 .pin__dot { width: 22px; height: 22px; margin-top: 4px; border-radius: 50%; border: 4px solid #fff; box-shadow: 0 0 0 0 currentColor; }
+/* heading 箭咀（§4.4）：64px 盒嘅中心對正圓點中心（圓點中心 = 元素底邊以上 11px），
+   所以旋轉係繞住實際座標轉。冇 heading / 靜止 / 訊號丟失時隱藏（未知 ≠ 向北）。 */
+.pin { position: relative; }
+.pin__arrow {
+  position: absolute; left: 50%; bottom: 11px; width: 64px; height: 64px; margin: 0 0 -32px -32px;
+  transform-origin: 50% 50%; opacity: 0; transition: opacity 0.2s; color: inherit;
+}
+.pin__arrow svg { width: 100%; height: 100%; fill: currentColor; stroke: #fff; stroke-width: 2; }
+.pin--heading .pin__arrow { opacity: 0.95; }
 .pin--me { color: #1a73e8; }
 .pin--me .pin__label, .pin--me .pin__dot { background: #1a73e8; }
 .pin--me .pin__dot { animation: pulse 2s infinite; }

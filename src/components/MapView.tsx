@@ -57,10 +57,27 @@ const DOT_OFFSET: [number, number] = [0, 11];
 function markerEl(text: string, cls: string): HTMLElement {
   const el = document.createElement('div');
   el.className = `pin ${cls}`;
-  el.innerHTML = `<span class="pin__label"></span><span class="pin__dot"></span>`;
+  // pin__arrow：heading 箭咀（§4.4），繞圓點中心旋轉；冇 heading 或者靜止時隱藏
+  el.innerHTML = `<span class="pin__label"></span><span class="pin__dot"></span>` +
+    `<span class="pin__arrow"><svg viewBox="0 0 64 64" aria-hidden="true"><polygon points="32 4 41 25 23 25" /></svg></span>`;
   (el.querySelector('.pin__label') as HTMLElement).textContent = text;
   el.setAttribute('aria-hidden', 'true');
   return el;
+}
+
+/**
+ * 顯示 / 隱藏 heading 箭咀並旋轉到方位角（0° = 正北，順時針）。
+ * 只喺郁緊（非 still、非訊號丟失）而且 `heading` 已知時顯示 —— 未知 ≠ 向北（§4.1）。
+ */
+function setHeading(el: HTMLElement, fix: Fix, moving: boolean): void {
+  const arrow = el.querySelector('.pin__arrow') as HTMLElement | null;
+  if (!arrow) return;
+  if (!moving || fix.heading === undefined || !Number.isFinite(fix.heading)) {
+    el.classList.remove('pin--heading');
+    return;
+  }
+  arrow.style.transform = `rotate(${fix.heading}deg)`;
+  el.classList.add('pin--heading');
 }
 
 export function MapView({ fix, is3D, motion = 'still', signalLost = false, sharedPin, livePeers }: Props) {
@@ -114,6 +131,8 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
     meMarker.current.setLngLat([fix.lng, fix.lat]).addTo(map);
     // 訊號丟失：pin 變灰（§4.6）
     meMarker.current.getElement().classList.toggle('pin--lost', signalLost);
+    // heading 箭咀（§4.4）：郁緊而方位角已知先顯示
+    setHeading(meMarker.current.getElement(), fix, motion !== 'still' && !signalLost);
     // 記低呢個 fix 同收到時刻，畀 rAF 外推 loop 用（§4.4）
     latestFix.current = fix;
     receivedAt.current = performance.now();
@@ -131,7 +150,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       const zoom = radius > 500 ? 14 : radius > 150 ? 16 : 17.5;
       map.easeTo({ center: [fix.lng, fix.lat], zoom: Math.max(map.getZoom(), zoom), duration: 800 });
     }
-  }, [fix, loaded, sharedPin, signalLost]);
+  }, [fix, loaded, sharedPin, signalLost, motion]);
 
   // Marker 外推插值（§4.4）：兩個 GPS update 之間用 speed + heading 平滑移動「我」同對方嘅 marker。
   //   - 只喺非 still、非訊號丟失、speed/heading 已知、accuracy ≤ 30 m 時外推，最多 1.5 s（extrapolateFix 內部限制）。
@@ -187,6 +206,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       // 對方暫停 / 訊號丟失：變灰 + 停止外推（保留最後已知位置）
       const stale = p.state === 'lost' || p.state === 'paused';
       marker.getElement().classList.toggle('pin--lost', stale);
+      setHeading(marker.getElement(), p.fix, !stale);
       if (stale) peerTrack.current.delete(p.id);
       else peerTrack.current.set(p.id, { fix: p.fix, at: performance.now() });
       const radius = Number.isFinite(p.fix.accuracy) ? Math.min(p.fix.accuracy, 2000) : 0;

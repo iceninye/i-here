@@ -18,10 +18,11 @@ export default function App() {
   const [viewingShared, setViewingShared] = useState(!!shared);
   const loc = useCurrentLocation({ enabled: !viewingShared });
   const live = useLiveShare(loc.fix);
-  // 實時分享期間保持螢幕亮著（§4.5 / §5.3）；唔支援就靜默降級，banner 提一句
-  const wake = useWakeLock(live.status === 'live');
   // opt-in 對話框（§5.4）：host = 我發起；guest 由 live.pendingJoin 驅動
   const [hostConsent, setHostConsent] = useState(false);
+  // Screen Wake Lock 只喺 opt-in 時申請（§4.5）：實時分享期間，或者用戶自己開「保持螢幕著」
+  const [keepAwake, setKeepAwake] = useState(false);
+  const wake = useWakeLock(live.status === 'live' || keepAwake);
   const [is3D, setIs3D] = useState(false);
   const bottomRef = useRef<HTMLElement>(null);
 
@@ -55,7 +56,7 @@ export default function App() {
       />
 
       <header className="top">
-        <LiveShareBanner live={live} keepAwake={wake.supported} />
+        <LiveShareBanner live={live} keepAwake={wake.active} />
         {viewingShared && shared ? (
           <section className="card" aria-label="對方分享的位置">
             <p className="card__eyebrow">對方分享的位置</p>
@@ -89,6 +90,12 @@ export default function App() {
           {!viewingShared && live.available && (live.status === 'idle' || live.status === 'ended' || live.status === 'error') && (
             <button type="button" className="tool-btn" onClick={() => setHostConsent(true)}>
               <Icon name="people" /> 實時分享
+            </button>
+          )}
+          {/* 唔支援 Wake Lock 就唔顯示呢個掣（撳咗都冇用，得返個「可能會自動熄屏」提示） */}
+          {!viewingShared && wake.supported && live.status !== 'live' && (
+            <button type="button" className="tool-btn" onClick={() => setKeepAwake(v => !v)} aria-pressed={keepAwake}>
+              <Icon name="sun" /> 保持螢幕著
             </button>
           )}
           <button type="button" className="tool-btn" onClick={() => setIs3D(v => !v)} aria-pressed={is3D}>
