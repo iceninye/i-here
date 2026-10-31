@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { CurrentLocation } from '../hooks/useCurrentLocation';
+import type { LiveShareState } from '../hooks/useLiveShare';
 import { getApiLog, subscribeApiLog } from '../lib/apiLog';
 import { fixLogCsv, getFixLog, subscribeFixLog } from '../lib/fixLog';
 
@@ -19,7 +20,7 @@ function queryHint(url: string): string {
 }
 
 /** 網址加 ?debug=1 先出現：顯示定位同每個 API call 嘅結果，方便喺手機上排查，亦可以錄低真實回應做測試 fixture。 */
-export function DebugPanel({ loc }: { loc: CurrentLocation }) {
+export function DebugPanel({ loc, live }: { loc: CurrentLocation; live?: LiveShareState }) {
   const log = useSyncExternalStore(subscribeApiLog, getApiLog);
   const fixes = useSyncExternalStore(subscribeFixLog, getFixLog);
   const latestPerApi = log.filter((e, i) => e.body && log.findIndex(o => o.name === e.name && o.body) === i);
@@ -28,6 +29,10 @@ export function DebugPanel({ loc }: { loc: CurrentLocation }) {
     `fix: ${loc.fix ? `${loc.fix.lat.toFixed(6)}, ${loc.fix.lng.toFixed(6)} ±${Math.round(loc.fix.accuracy)}m` : '-'}`,
     `hk80: ${loc.hk80 ? `${loc.hk80.x.toFixed(1)}, ${loc.hk80.y.toFixed(1)} (${loc.hk80.source})` : '-'}`,
     `place: ${loc.placeStatus}${loc.place ? ` · ${loc.place.name} · ${loc.place.kind} · ${loc.place.source}` : ''}`,
+    // 實時分享：中轉延遲（§5.5 目標 p95 < 300 ms）；鐘差用 ping/pong 估算，所以係近似值
+    ...(live ? [`live: ${live.status}${live.role ? ` · ${live.role}` : ''}${live.peers.length ? ` · peers ${live.peers.map(p => p.state).join(',')}` : ''}${
+      live.stats ? ` · rtt ${Math.round(live.stats.rttMs ?? NaN)}ms · 中轉 last ${Math.round(live.stats.relayLastMs ?? NaN)}ms p95 ${live.stats.relayP95Ms}ms (n=${live.stats.samples})` : ''
+    }`] : []),
     '',
     ...log.map(e => `[${e.status === 'pending' ? '…' : e.ok ? 'OK' : 'FAIL'}] ${hhmmss(e.at)} ${e.name} · ${e.status} · ${e.ms}ms\n${e.url}\n${e.snippet}\n`),
   ].join('\n');

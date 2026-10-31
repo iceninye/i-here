@@ -96,6 +96,21 @@ describe('WebSocket relay', () => {
     host.ws.close(); guest.ws.close();
   });
 
+  it('answers ping with a serverTs pong so clients can measure relay latency (§5.5)', async () => {
+    const { roomId, hostToken } = await createRoom();
+    const host = await connect(roomId, hostToken);
+
+    host.ws.send(JSON.stringify({ type: 'ping' }));
+    await wait(30);
+
+    const pong = host.messages.find(m => m.type === 'pong');
+    expect(pong).toBeDefined();
+    expect(typeof pong.serverTs).toBe('number');
+    expect(Math.abs(pong.serverTs - Date.now())).toBeLessThan(5000);
+
+    host.ws.close();
+  });
+
   it('rejects a third peer (room full)', async () => {
     const { roomId, hostToken } = await createRoom();
     const host = await connect(roomId, hostToken);

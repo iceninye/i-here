@@ -47,6 +47,7 @@ type ServerMsg =
   | { type: 'peer'; id: string; state: PeerState['state'] | 'left' }
   | { type: 'fix'; from: string; iv: string; ct: string; serverTs: number }
   | { type: 'peers'; count: number }
+  | { type: 'pong'; serverTs: number }
   | { type: 'ended'; reason: EndReason };
 
 type EndReason = 'stop' | 'ttl' | 'closed' | 'kicked' | 'full';
@@ -146,7 +147,8 @@ export class LiveShareRoom {
 
     switch (msg.type) {
       case 'fix': return this.handleFix(ws, peer, msg);
-      case 'ping': return; // lastSeen 已更新
+      // lastSeen 已更新；回 pong 畀 client 量中轉延遲同鐘差（§5.5 p95 < 300 ms）
+      case 'ping': return this.send(ws, { type: 'pong', serverTs: now });
       case 'paused': return this.setPeerState(ws, peer, 'paused');
       case 'resume': return this.setPeerState(ws, peer, 'live');
       case 'kick': return this.handleKick(ws, peer, msg);

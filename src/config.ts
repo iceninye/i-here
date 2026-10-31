@@ -27,6 +27,13 @@ export const ENDPOINTS = {
 /** 只有 build 時設 VITE_OSM_FALLBACK=1 先會開。私隱優先：預設座標只送政府 API。 */
 export const OSM_FALLBACK = import.meta.env.VITE_OSM_FALLBACK === '1';
 
+/**
+ * Live share Worker base URL（PLAN §5.3 / §6.2，D11 = B）。
+ * GitHub Pages 前端跨域 call Cloudflare Worker 嘅 `/api/*`。
+ * 例：`https://i-here.<user>.workers.dev`。留空 = live share 入口隱藏（同一 Worker host 時可用相對路徑）。
+ */
+export const LIVE_API = (import.meta.env.VITE_LIVE_API ?? '').replace(/\/+$/, '');
+
 /** 地政總署 XYZ 地圖瓦片（WGS84 / Web Mercator，免 key） */
 export const LANDSD_TILES = {
   basemap: 'https://mapapi.geodata.gov.hk/gs/api/v1.0.0/xyz/basemap/WGS84/{z}/{x}/{y}.png',
