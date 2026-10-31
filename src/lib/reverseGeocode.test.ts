@@ -110,6 +110,17 @@ describe('title ranking and blacklist', () => {
     expect(pickTitle([c('青田路', 20, 'street')])?.name).toBe('青田路');
   });
 
+  it('preferStreet (fast state, §4.3) picks the nearest street over a closer-sorted building', () => {
+    // 正常揀法：車站勝過街名
+    expect(pickTitle([c('青田路', 20, 'street'), c('錦上路站', 30, 'transport')])?.name).toBe('錦上路站');
+    // fast 狀態：優先街名，就算車站更貼身
+    expect(pickTitle([c('青田路', 20, 'street'), c('錦上路站', 30, 'transport')], { preferStreet: true })?.name).toBe('青田路');
+    // 多條街：揀最近嗰條
+    expect(pickTitle([c('宏達路', 40, 'street'), c('媽橫路', 10, 'street')], { preferStreet: true })?.name).toBe('媽橫路');
+    // 冇合資格街道：退回正常揀法
+    expect(pickTitle([c('興輝樓', 40, 'building')], { preferStreet: true })?.name).toBe('興輝樓');
+  });
+
   it('landmarks skip the title and junk, and are limited to 3 within 300 m', () => {
     const title = c('興輝樓', 10, 'building');
     const l = pickLandmarks([title, c('WiFi.HK 熱點', 5), c('A樓', 50), c('B苑', 90), c('C中心', 120), c('D閣', 200), c('遠處', 900)], title);

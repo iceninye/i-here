@@ -36,7 +36,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <MapView fix={viewingShared ? null : loc.fix} is3D={is3D} sharedPin={viewingShared ? shared : null} />
+      <MapView fix={viewingShared ? null : loc.fix} is3D={is3D} motion={loc.motion} signalLost={loc.signalLost} sharedPin={viewingShared ? shared : null} />
 
       <header className="top">
         {viewingShared && shared ? (

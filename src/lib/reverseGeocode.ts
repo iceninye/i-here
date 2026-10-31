@@ -127,9 +127,17 @@ function eligibleAsTitle(c: PlaceCandidate): boolean {
   return isTitleEligible(c.name) && Number.isFinite(c.distanceM) && c.distanceM <= KIND_MAX_M[c.kind];
 }
 
-export function pickTitle(cands: PlaceCandidate[]): PlaceCandidate | undefined {
-  return cands
-    .filter(eligibleAsTitle)
+export function pickTitle(cands: PlaceCandidate[], opts: { preferStreet?: boolean } = {}): PlaceCandidate | undefined {
+  const eligible = cands.filter(eligibleAsTitle);
+  // fast 狀態（§4.3）：高速下大廈名冇意義，優先顯示街名（identify 對街道回 addressType 'ST'）。
+  // 有合資格街道就用最近嗰條；完全冇街道先退回正常揀法。
+  if (opts.preferStreet) {
+    const streets = eligible
+      .filter(c => c.kind === 'street')
+      .sort((a, b) => a.distanceM - b.distanceM);
+    if (streets[0]) return streets[0];
+  }
+  return eligible
     .sort((a, b) => a.distanceM + KIND_PENALTY[a.kind] - (b.distanceM + KIND_PENALTY[b.kind]))[0];
 }
 
@@ -492,6 +500,7 @@ export async function reverseGeocode(
   at: { lat: number; lng: number; accuracy?: number },
   signal?: AbortSignal,
   onPartial?: (place: ResolvedPlace) => void,
+  opts: { preferStreet?: boolean } = {},
 ): Promise<ResolvedPlace | null> {
   const origin: Origin = { x: p.x, y: p.y, lat: at.lat, lng: at.lng };
   const acc = at.accuracy ?? AT_THRESHOLD_M;
@@ -501,7 +510,7 @@ export async function reverseGeocode(
   const nearbyP = tryParse(`${ENDPOINTS.searchNearby}?${qs}`, 'searchNearby', j => parseNearby(j, origin), signal);
 
   const identified = await identifyP;
-  let title = pickTitle(identified);
+  let title = pickTitle(identified, opts);
   let source: PlaceSource = 'identify';
 
   // identify 一回就先顯示（~1 s）；之後 searchNearby 一回再比較一次，更貼身嘅（例如 23 米外嘅車站出口
@@ -510,7 +519,7 @@ export async function reverseGeocode(
   const first = title;
 
   const nearby = await nearbyP;
-  const best = pickTitle([...identified, ...nearby]);
+  const best = pickTitle([...identified, ...nearby], opts);
   if (best) {
     title = best;
     source = identified.includes(best) ? 'identify' : 'nearby';
