@@ -191,9 +191,9 @@ body { background: var(--bg); overscroll-behavior: none; }
 .card__sub { font-size: 0.95rem; line-height: 1.4; margin-top: 4px !important; color: var(--ink); }
 .card__landmarks { font-size: var(--text-sm); line-height: 1.45; margin-top: var(--sp-2) !important; color: var(--ink-2); }
 .card__hint { font-size: var(--text-sm); margin-top: 6px !important; padding: 6px 10px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--warn-ink); }
-.card__sub--warn { display: flex; align-items: center; gap: 6px; color: var(--warn-ink); }
-.nearby { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
-.nearby__summary { cursor: pointer; font-size: var(--text-sm); font-weight: 600; color: var(--ink-2); list-style: none; min-height: 32px; display: flex; align-items: center; }
+.card__sub--warn { display: flex; align-items: center; gap: 4px; margin-top: 2px !important; font-size: var(--text-xs); line-height: 1.25; color: var(--warn-ink); }
+.nearby { margin-top: 4px; padding-top: 2px; border-top: 1px solid var(--border); }
+.nearby__summary { cursor: pointer; font-size: var(--text-xs); font-weight: 600; color: var(--ink-2); list-style: none; min-height: 24px; line-height: 1.25; display: flex; align-items: center; }
 .nearby__summary::-webkit-details-marker { display: none; }
 .nearby__summary::before { content: '▸ '; }
 .nearby[open] .nearby__summary::before { content: '▾ '; }
@@ -237,6 +237,7 @@ body { background: var(--bg); overscroll-behavior: none; }
 .share-btn:disabled { background: var(--border-strong); color: var(--ink-2); box-shadow: none; }
 .share-btn--secondary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 6px 18px var(--brand-shadow); }
 .share-result { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 1.4em; margin: 4px 0 0; font-weight: 700; color: var(--good-ink); }
+.share-result:empty { display: none; }
 .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); gap: 8px; margin-top: 4px; }
 .tool-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
@@ -246,7 +247,7 @@ body { background: var(--bg); overscroll-behavior: none; }
 }
 .tool-btn .icon { font-size: 1.1rem; }
 .more-toggle {
-  display: flex; align-items: center; justify-content: center; gap: 4px; margin: 4px auto 0; min-height: 36px; padding: 0 16px;
+  display: flex; align-items: center; justify-content: center; gap: 4px; margin: 0 auto; min-height: 28px; line-height: 1.1; padding: 0 16px;
   border: none; background: none; font: inherit; font-size: var(--text-sm); font-weight: 700; color: var(--ink-2); cursor: pointer; touch-action: manipulation;
 }
 .chev { font-size: 0.8em; }
