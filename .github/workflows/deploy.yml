@@ -29,6 +29,7 @@ jobs:
         env:
           # 喺 repo Settings → Secrets and variables → Actions → Variables 設定（可選）
           VITE_OSM_FALLBACK: ${{ vars.VITE_OSM_FALLBACK }}
+          VITE_LIVE_API: ${{ vars.VITE_LIVE_API }}
           VITE_LANDSD_3DTILES_URL: ${{ vars.VITE_LANDSD_3DTILES_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
