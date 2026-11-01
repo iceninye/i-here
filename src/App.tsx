@@ -24,6 +24,8 @@ export default function App() {
   const [keepAwake, setKeepAwake] = useState(false);
   const wake = useWakeLock(live.status === 'live' || keepAwake);
   const [is3D, setIs3D] = useState(false);
+  // 次要功能（實時分享 / 保持螢幕著）收埋，撳「更多」先展開 —— 騰出更多地圖空間
+  const [moreOpen, setMoreOpen] = useState(false);
   const bottomRef = useRef<HTMLElement>(null);
 
   // 底欄高度（隨字體大小 / 提示 / 安全區變）量度後放入 --bottom-h：
@@ -43,6 +45,10 @@ export default function App() {
     history.replaceState(null, '', location.pathname + (debug ? '?debug=1' : ''));
     setViewingShared(false);
   };
+
+  const showLiveStart = !viewingShared && live.available && (live.status === 'idle' || live.status === 'ended' || live.status === 'error');
+  const showKeepAwake = !viewingShared && wake.supported && live.status !== 'live';
+  const showMore = showLiveStart || showKeepAwake;
 
   return (
     <div className="app">
@@ -86,22 +92,34 @@ export default function App() {
               <Icon name="refresh" /> 重新定位
             </button>
           )}
-          {/* Worker 未設定（VITE_LIVE_API 空）就完全唔顯示入口；分享中由頂部 banner 負責停止 */}
-          {!viewingShared && live.available && (live.status === 'idle' || live.status === 'ended' || live.status === 'error') && (
-            <button type="button" className="tool-btn" onClick={() => setHostConsent(true)}>
-              <Icon name="people" /> 實時分享
-            </button>
-          )}
-          {/* 唔支援 Wake Lock 就唔顯示呢個掣（撳咗都冇用，得返個「可能會自動熄屏」提示） */}
-          {!viewingShared && wake.supported && live.status !== 'live' && (
-            <button type="button" className="tool-btn" onClick={() => setKeepAwake(v => !v)} aria-pressed={keepAwake}>
-              <Icon name="sun" /> 保持螢幕著
-            </button>
-          )}
           <button type="button" className="tool-btn" onClick={() => setIs3D(v => !v)} aria-pressed={is3D}>
-            <Icon name={is3D ? 'layers' : 'cube'} /> {is3D ? '平面地圖' : '立體圖'}
+            <Icon name={is3D ? 'layers' : 'cube'} /> {is3D ? '平面' : '立體'}
           </button>
+          {showMore && (
+            <button
+              type="button" className="tool-btn tool-btn--more" onClick={() => setMoreOpen(v => !v)}
+              aria-expanded={moreOpen} aria-controls="more-tools"
+            >
+              更多 <span className="chev" aria-hidden="true">{moreOpen ? '▾' : '▴'}</span>
+            </button>
+          )}
         </div>
+        {showMore && moreOpen && (
+          <div className="tools tools--more" id="more-tools">
+            {/* Worker 未設定（VITE_LIVE_API 空）就完全唔顯示入口；分享中由頂部 banner 負責停止 */}
+            {showLiveStart && (
+              <button type="button" className="tool-btn" onClick={() => { setMoreOpen(false); setHostConsent(true); }}>
+                <Icon name="people" /> 實時分享
+              </button>
+            )}
+            {/* 唔支援 Wake Lock 就唔顯示呢個掣（撳咗都冇用，得返個「可能會自動熄屏」提示） */}
+            {showKeepAwake && (
+              <button type="button" className="tool-btn" onClick={() => setKeepAwake(v => !v)} aria-pressed={keepAwake}>
+                <Icon name="sun" /> 保持螢幕著
+              </button>
+            )}
+          </div>
+        )}
         {/* 版本：手機有時會跑緊舊快取，貼問題嚟嘅時候一眼睇到係邊個版本（日期時間係 UTC，香港 +8 小時） */}
         <p className="version">版本 {__BUILD_ID__}</p>
       </footer>
