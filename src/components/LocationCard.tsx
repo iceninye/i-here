@@ -80,29 +80,33 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
             </p>
           )}
           {place?.address && <p className="card__sub">{place.address}</p>}
-          {place && place.landmarks.length > 0 && (
-            <p className="card__landmarks">
-              附近還有：{place.landmarks.map(l => (Math.round(l.distanceM) > 0 ? `${l.name}（${Math.round(l.distanceM)} 米）` : l.name)).join('、')}
-            </p>
-          )}
           {loc.motion === 'fast' && loc.speedKmh != null && (
             <p className="card__sub">移動中 · 約 {loc.speedKmh} km/h（高速時地址較少更新）</p>
           )}
           {loc.signalLost && (
             <p className="card__sub card__sub--warn"><Icon name="alert" /> 訊號丟失 · 顯示最後已知位置</p>
           )}
-          {place && place.nearby.length > 0 && (
+          {place && (place.nearby.length > 0 || place.landmarks.length > 0) && (
             <details className="nearby">
-              <summary className="nearby__summary">附近有咩（{place.nearby.length}）</summary>
-              <ul className="nearby__list">
-                {place.nearby.map(n => (
-                  <li key={n.name} className="nearby__item">
-                    <span className="nearby__cat">{CAT_LABEL[n.category]}</span>
-                    <span className="nearby__name">{n.name}</span>
-                    <span className="nearby__meta">{n.direction ? `${n.direction} · ` : ''}{Math.round(n.distanceM)} 米</span>
-                  </li>
-                ))}
-              </ul>
+              <summary className="nearby__summary">
+                附近資訊{place.nearby.length > 0 ? `（${place.nearby.length}）` : ''}
+              </summary>
+              {place.landmarks.length > 0 && (
+                <p className="card__landmarks">
+                  附近還有：{place.landmarks.map(l => (Math.round(l.distanceM) > 0 ? `${l.name}（${Math.round(l.distanceM)} 米）` : l.name)).join('、')}
+                </p>
+              )}
+              {place.nearby.length > 0 && (
+                <ul className="nearby__list">
+                  {place.nearby.map(n => (
+                    <li key={n.name} className="nearby__item">
+                      <span className="nearby__cat">{CAT_LABEL[n.category]}</span>
+                      <span className="nearby__name">{n.name}</span>
+                      <span className="nearby__meta">{n.direction ? `${n.direction} · ` : ''}{Math.round(n.distanceM)} 米</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </details>
           )}
           {place?.source === 'osm' && <p className="card__source">地址資料來源：OpenStreetMap</p>}
