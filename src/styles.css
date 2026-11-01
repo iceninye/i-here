@@ -118,14 +118,17 @@ body { background: var(--bg); overscroll-behavior: none; }
 }
 /* 地圖版權（MapLibre 嘅 ⓘ）放喺底欄上面，唔俾底欄蓋住 */
 .map-wrap .maplibregl-ctrl-bottom-right, .map-wrap .maplibregl-ctrl-bottom-left { bottom: var(--bottom-h, 9rem); z-index: 3; }
-.recenter-btn {
+.map-fabs {
   position: absolute; right: var(--sp-3); bottom: calc(var(--bottom-h, 9rem) + 44px); z-index: 2;
-  display: inline-flex; align-items: center; gap: var(--sp-2);
-  min-height: 44px; padding: 0 14px; border-radius: var(--r-pill); border: 2px solid var(--brand);
-  background: var(--surface); color: var(--brand); font: inherit; font-size: var(--text-sm); font-weight: 700;
-  box-shadow: var(--shadow); cursor: pointer;
+  display: flex; flex-direction: column; gap: var(--sp-2);
 }
-.recenter-btn .icon { font-size: 1.2rem; }
+/* 圓形 icon 掣（同地政總署地圖一樣：淨係圖示） */
+.fab {
+  display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0;
+  border-radius: 50%; border: 2px solid var(--border-strong); background: var(--surface); color: var(--brand);
+  box-shadow: var(--shadow); cursor: pointer; touch-action: manipulation;
+}
+.fab .icon { font-size: 1.5rem; }
 
 /* 「我」標記：大、有字，唔使識睇藍點都知 */
 .pin { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
@@ -139,6 +142,7 @@ body { background: var(--bg); overscroll-behavior: none; }
 .pin { position: relative; }
 .pin__arrow {
   position: absolute; left: 50%; bottom: 11px; width: 64px; height: 64px; margin: 0 0 -32px -32px;
+  transform: rotate(calc((var(--h, 0) - var(--b, 0)) * 1deg));
   transform-origin: 50% 50%; opacity: 0; transition: opacity 0.2s; color: inherit;
 }
 .pin__arrow svg { width: 100%; height: 100%; fill: currentColor; stroke: #fff; stroke-width: 2; }
@@ -178,6 +182,8 @@ body { background: var(--bg); overscroll-behavior: none; }
   padding: 10px 14px 12px; max-height: 32dvh; overflow-y: auto;
 }
 .card p { margin: 0; }
+.card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
+.card__head .badge { margin: 0 !important; }
 .card__eyebrow { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); letter-spacing: 0.02em; }
 .card__title { font-size: var(--text-title); font-weight: 800; line-height: 1.2; margin-top: 0 !important; word-break: break-word; letter-spacing: 0.01em; }
 .card__title--muted { font-size: var(--text-xl); color: var(--ink-2); font-weight: 700; }
@@ -221,15 +227,15 @@ body { background: var(--bg); overscroll-behavior: none; }
   background: var(--bottom-grad);
 }
 .share-btn {
-  width: 100%; min-height: 64px; display: flex; align-items: center; justify-content: center; gap: var(--sp-3);
+  width: fit-content; min-width: 14rem; margin: 0 auto; padding: 0 28px; min-height: 52px; display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
   border: none; border-radius: var(--r-lg); background: var(--share); color: #fff;
-  font: inherit; font-size: var(--text-share); font-weight: 800; letter-spacing: 0.04em;
+  font: inherit; font-size: 1.25rem; font-weight: 800; letter-spacing: 0.04em;
   box-shadow: 0 6px 18px var(--share-shadow); cursor: pointer; touch-action: manipulation;
 }
-.share-btn .icon { font-size: 1.4rem; }
+.share-btn .icon { font-size: 1.25rem; }
 .share-btn:active { background: var(--share-press); transform: translateY(1px); }
 .share-btn:disabled { background: var(--border-strong); color: var(--ink-2); box-shadow: none; }
-.share-btn--secondary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 6px 18px var(--brand-shadow); font-size: 1.4rem; }
+.share-btn--secondary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 6px 18px var(--brand-shadow); }
 .share-result { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 1.4em; margin: 4px 0 0; font-weight: 700; color: var(--good-ink); }
 .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
 .tools--more { margin-top: 8px; }
@@ -270,7 +276,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 4px soli
 
 @media (prefers-reduced-motion: reduce) {
   .pin--me .pin__dot, .pin--peer .pin__dot, .live__dot, .spinner { animation: none; }
-  .recenter-btn, .tool-btn, .share-btn { transition: none; }
+  .fab, .tool-btn, .share-btn { transition: none; }
 }
 /* 大屏（平板 / 桌面）：卡同按鈕唔好拉到成個闊度 */
 @media (min-width: 720px) {
