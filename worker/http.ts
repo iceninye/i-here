@@ -18,8 +18,10 @@ function allowedList(env: Env): string[] {
  * Origin 係咪容許。冇 Origin（same-origin / curl）一律放行；有 Origin 就要 match 白名單。
  * 萬用字元只容許喺 host 最左 label（`*.pages.dev`），避免 `*` 通配一切。
  */
-export function isAllowedOrigin(origin: string | null, env: Env): boolean {
+export function isAllowedOrigin(origin: string | null, env: Env, selfOrigin?: string): boolean {
   if (!origin) return true;
+  // 瀏覽器同源 call 都會帶 Origin；Worker 自己嘅 origin 永遠放行
+  if (selfOrigin && origin === selfOrigin) return true;
   let parsed: URL;
   try { parsed = new URL(origin); } catch { return false; }
   const list = allowedList(env);
@@ -36,14 +38,14 @@ export function isAllowedOrigin(origin: string | null, env: Env): boolean {
 }
 
 /** CORS response headers。只 echo 容許嘅 Origin（唔好用 `*` 配 credentials-style 請求）。 */
-export function corsHeaders(origin: string | null, env: Env): Record<string, string> {
+export function corsHeaders(origin: string | null, env: Env, selfOrigin?: string): Record<string, string> {
   const h: Record<string, string> = {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
-  if (origin && isAllowedOrigin(origin, env)) h['Access-Control-Allow-Origin'] = origin;
+  if (origin && isAllowedOrigin(origin, env, selfOrigin)) h['Access-Control-Allow-Origin'] = origin;
   return h;
 }
 
@@ -56,8 +58,9 @@ interface Bucket { count: number; resetAt: number }
 const buckets = new Map<string, Bucket>();
 const WINDOW_MS = 60_000;
 
-export function tooManyRequests(ip: string, env: Env): boolean {
-  const limit = Number(env.RATE_LIMIT_PER_MIN ?? '10');
+export function tooManyRequests(ip: string, env: Env, scope = 'create', limitOverride?: number): boolean {
+  const limit = limitOverride ?? Number(env.RATE_LIMIT_PER_MIN ?? '10');
+  ip = scope + ':' + ip;
   const now = Date.now();
   const b = buckets.get(ip);
   if (!b || now >= b.resetAt) {
