@@ -4,6 +4,7 @@
   "name": "i-here-test",
   "main": "worker/index.ts",
   "compatibility_date": "2025-09-01",
+  "vars": { "ALLOWED_ORIGINS": "https://iceninye.github.io", "RATE_LIMIT_PER_MIN": "1000" },
   "durable_objects": {
     "bindings": [{ "name": "LIVE_SHARE", "class_name": "LiveShareRoom" }]
   },

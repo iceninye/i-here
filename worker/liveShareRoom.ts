@@ -32,6 +32,8 @@ interface RoomMeta {
   hostToken: string;
   /** epoch ms；alarm 到期關房 */
   expiresAt: number;
+  /** 房主踢過人之後鎖房：只容許持 hostToken 嘅人入，令舊 link 失效（§5.2 防搶位） */
+  locked?: boolean;
 }
 
 const MAX_PEERS = 2;
@@ -84,6 +86,8 @@ export class LiveShareRoom {
       if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('expected websocket upgrade', { status: 400 });
       }
+      // 房未建立 / 已散：upgrade 前直接 404，唔好接受 socket（防亂 roomId 佔連線）
+      if (!(await this.ensureMeta())) return new Response('no such room', { status: 404 });
       const pair = new WebSocketPair();
       // Hibernation API：唔用 pair[1].accept()，用 ctx.acceptWebSocket()
       this.ctx.acceptWebSocket(pair[1]);
@@ -106,7 +110,8 @@ export class LiveShareRoom {
       const meta: RoomMeta = { roomId, hostToken: randToken(), expiresAt: Date.now() + DEFAULT_TTL_MS };
       this.meta = meta;
       await this.ctx.storage.put('meta', meta);
-      await this.ctx.storage.setAlarm(meta.expiresAt);
+      // 第一次 alarm 就要係心跳 sweep（唔係 TTL），否則 lost / 空房檢查要等到 TTL 先行
+      await this.ctx.storage.setAlarm(Math.min(meta.expiresAt, Date.now() + HEARTBEAT_SWEEP_MS));
       return Response.json({ hostToken: meta.hostToken, expiresAt: meta.expiresAt });
     }
 
@@ -162,6 +167,13 @@ export class LiveShareRoom {
     if (!meta) return this.close(ws, 1011, 'room not initialized');
     if (msg.roomId !== meta.roomId) return this.close(ws, 1008, 'wrong room');
 
+    const isHost = typeof msg.token === 'string' && msg.token === meta.hostToken;
+    // 踢過人之後鎖房：非房主一律拒絕
+    if (meta.locked && !isHost) {
+      this.send(ws, { type: 'ended', reason: 'kicked' });
+      return this.close(ws, 1008, 'room locked');
+    }
+
     // 滿員：第三個連線直接拒絕（唔通知對方位置）
     const live = this.ctx.getWebSockets().filter(w => this.peers.has(w));
     if (live.length >= MAX_PEERS) {
@@ -169,7 +181,6 @@ export class LiveShareRoom {
       return this.close(ws, 1013, 'room full');
     }
 
-    const isHost = typeof msg.token === 'string' && msg.token === meta.hostToken;
     const peer: PeerState = {
       id: randToken(8),
       host: isHost,
@@ -217,12 +228,18 @@ export class LiveShareRoom {
     this.broadcast({ type: 'peer', id: peer.id, state });
   }
 
-  private handleKick(ws: WebSocket, peer: PeerState, msg: Record<string, unknown>): void {
+  private async handleKick(ws: WebSocket, peer: PeerState, msg: Record<string, unknown>): Promise<void> {
     if (!peer.host) return this.close(ws, 1008, 'only host can kick');
     const targetId = msg.peerId;
     if (typeof targetId !== 'string') return;
     for (const [other, st] of this.peers) {
       if (st.id === targetId) {
+        // 鎖房：舊 link 即使再連都入唔到（只有 hostToken 持有人可入）
+        const meta = await this.ensureMeta();
+        if (meta && !meta.locked) {
+          meta.locked = true;
+          await this.ctx.storage.put('meta', meta);
+        }
         this.send(other, { type: 'ended', reason: 'kicked' });
         this.peers.delete(other);
         other.close(1000, 'kicked');

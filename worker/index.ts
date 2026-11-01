@@ -28,6 +28,9 @@ function newRoomId(): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/** newRoomId() 嘅輸出：16 bytes → 22 字元 base64url */
+const ROOM_ID_RE = /^[A-Za-z0-9_-]{22}$/;
+
 /** 由 `Sec-WebSocket-Protocol` 抽 roomId。client 送 `["ih-live", "<roomId>"]`。 */
 function roomIdFromSubprotocol(header: string | null): string | null {
   if (!header) return null;
@@ -41,50 +44,58 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
+    const self = url.origin;
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders(origin, env) });
+      return new Response(null, { status: 204, headers: corsHeaders(origin, env, self) });
     }
 
     // ---- POST /api/live：建房 ----
     if (url.pathname === '/api/live' && request.method === 'POST') {
-      if (origin && !isAllowedOrigin(origin, env)) {
-        return new Response('origin not allowed', { status: 403, headers: corsHeaders(origin, env) });
+      if (origin && !isAllowedOrigin(origin, env, self)) {
+        return new Response('origin not allowed', { status: 403, headers: corsHeaders(origin, env, self) });
       }
       // 每 IP 每分鐘 rate limit（§5.4.4）；用 DO-free 嘅簡易 in-memory 计数唔夠穩，改用 ephemeral 檢查：
       // 呢度用一個命名 DO 做 per-IP token bucket 會太重；免費層用 ctx + 簡單 heuristic（見 http.ts）。
       const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
       if (tooManyRequests(ip, env)) {
-        return new Response('rate limited', { status: 429, headers: { 'Retry-After': '60', ...corsHeaders(origin, env) } });
+        return new Response('rate limited', { status: 429, headers: { 'Retry-After': '60', ...corsHeaders(origin, env, self) } });
       }
 
       const roomId = newRoomId();
       const stub = env.LIVE_SHARE.get(env.LIVE_SHARE.idFromName(roomId), { locationHint: 'apac' });
       const init = await stub.fetch(new Request('https://do/init?roomId=' + encodeURIComponent(roomId), { method: 'POST' }));
       if (!init.ok) {
-        return new Response('room init failed', { status: 502, headers: corsHeaders(origin, env) });
+        return new Response('room init failed', { status: 502, headers: corsHeaders(origin, env, self) });
       }
       const meta = (await init.json()) as { hostToken: string; expiresAt: number };
       void ctx;
       return Response.json(
         { roomId, hostToken: meta.hostToken, expiresAt: meta.expiresAt },
-        { headers: corsHeaders(origin, env) },
+        { headers: corsHeaders(origin, env, self) },
       );
     }
 
     // ---- GET /api/live/ws：WebSocket upgrade ----
     if (url.pathname === '/api/live/ws') {
       if (request.headers.get('Upgrade') !== 'websocket') {
-        return new Response('expected websocket upgrade', { status: 426, headers: corsHeaders(origin, env) });
+        return new Response('expected websocket upgrade', { status: 426, headers: corsHeaders(origin, env, self) });
       }
-      if (origin && !isAllowedOrigin(origin, env)) {
+      if (origin && !isAllowedOrigin(origin, env, self)) {
         return new Response('origin not allowed', { status: 403 });
       }
       const roomId = roomIdFromSubprotocol(request.headers.get('Sec-WebSocket-Protocol'));
       if (!roomId) {
         // roomId 唔喺 URL；冇 subprotocol 就無從路由
         return new Response('missing room subprotocol', { status: 400 });
+      }
+      // roomId 格式不符（唔係我哋生成嘅 128-bit base64url）→ 直接拒絕，唔好為亂碼 id 開 DO
+      if (!ROOM_ID_RE.test(roomId)) return new Response('bad room', { status: 400 });
+      // 每 IP 限制 upgrade 次數（掃 roomId / 重連風暴）；重連 + 兩個 peer 要夠用
+      const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+      if (tooManyRequests(ip, env, 'ws', 60)) {
+        return new Response('rate limited', { status: 429, headers: { 'Retry-After': '60' } });
       }
       const stub = env.LIVE_SHARE.get(env.LIVE_SHARE.idFromName(roomId), { locationHint: 'apac' });
       return stub.fetch(request);

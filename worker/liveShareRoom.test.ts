@@ -184,3 +184,50 @@ describe('TTL alarm (§5.2)', () => {
     expect(host.messages.some(m => m.type === 'ended' && m.reason === 'ttl')).toBe(true);
   });
 });
+
+describe('review fixes', () => {
+  it('allows same-origin and the configured Pages origin, rejects others (Origin check)', async () => {
+    const post = (origin: string) => SELF.fetch('https://test/api/live', { method: 'POST', headers: { Origin: origin } });
+    expect((await post('https://test')).status).toBe(200);
+    expect((await post('https://evil.example')).status).toBe(403);
+    const res = await SELF.fetch('https://test/api/live', { method: 'POST', headers: { Origin: 'https://iceninye.github.io' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://iceninye.github.io');
+  });
+
+  it('first alarm is the heartbeat sweep, not the TTL', async () => {
+    const { roomId, expiresAt } = await createRoom();
+    const alarm = await runInDurableObject(stubFor(roomId), async (_i, state) => state.storage.getAlarm());
+    expect(alarm).not.toBeNull();
+    expect((alarm as number)).toBeLessThan(Date.now() + 15_000);
+    expect((alarm as number)).toBeLessThan(expiresAt);
+  });
+
+  it('refuses a websocket upgrade for a roomId that was never created', async () => {
+    const res = await SELF.fetch('https://test/api/live/ws', {
+      headers: { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': 'ih-live, AAAAAAAAAAAAAAAAAAAAAA' },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects a malformed roomId before touching a Durable Object', async () => {
+    const res = await SELF.fetch('https://test/api/live/ws', {
+      headers: { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': 'ih-live, not-a-room' },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('locks the room after a kick: the same link cannot rejoin, the host still can', async () => {
+    const { roomId, hostToken } = await createRoom();
+    const host = await connect(roomId, hostToken);
+    const guest = await connect(roomId);
+    const guestId = host.messages.filter(m => m.type === 'peer' && m.state === 'joined').pop().id;
+    host.ws.send(JSON.stringify({ type: 'kick', peerId: guestId }));
+    await wait(50);
+    const again = await connect(roomId);
+    expect(again.messages.some(m => m.type === 'ended' && m.reason === 'kicked')).toBe(true);
+    const hostAgain = await connect(roomId, hostToken);
+    expect(hostAgain.messages.some(m => m.type === 'ended')).toBe(false);
+    void guest;
+  });
+});
