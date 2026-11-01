@@ -59,7 +59,7 @@ function markerEl(text: string, cls: string): HTMLElement {
   el.className = `pin ${cls}`;
   // pin__arrow：heading 箭咀（§4.4），繞圓點中心旋轉；冇 heading 或者靜止時隱藏
   el.innerHTML = `<span class="pin__label"></span><span class="pin__dot"></span>` +
-    `<span class="pin__arrow"><svg viewBox="0 0 64 64" aria-hidden="true"><polygon points="32 4 41 25 23 25" /></svg></span>`;
+    `<span class="pin__arrow"><svg viewBox="0 0 64 64" aria-hidden="true"><polygon points="32 12 36.5 22 27.5 22" /></svg></span>`;
   (el.querySelector('.pin__label') as HTMLElement).textContent = text;
   el.setAttribute('aria-hidden', 'true');
   return el;
@@ -76,7 +76,8 @@ function setHeading(el: HTMLElement, fix: Fix, moving: boolean): void {
     el.classList.remove('pin--heading');
     return;
   }
-  arrow.style.transform = `rotate(${fix.heading}deg)`;
+  // 方位角存喺 CSS 變數；地圖轉動時由 --b（地圖 bearing）扣返，箭咀先會繼續指向真實方向
+  el.style.setProperty('--h', String(fix.heading));
   el.classList.add('pin--heading');
 }
 
@@ -86,6 +87,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
   const meMarker = useRef<maplibregl.Marker | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [following, setFollowing] = useState(true);
+  const [bearing, setBearing] = useState(0);
   const followingRef = useRef(true);
   followingRef.current = following;
   // 插值用：最新 fix + 收到佢嘅時刻（§4.4）。用 ref 免 rAF loop 每帧重新綁定。
@@ -108,11 +110,15 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       maxBounds: HK_BOUNDS,
       maxPitch: 70,
       attributionControl: { compact: true },
-      // 長者容易誤觸旋轉：一指拖動 / 兩指縮放就夠
-      dragRotate: false,
+      // 兩指轉動可以旋轉地圖（預設向北；右下角指北針一撳返正北）。冇 pitch 跟住轉，避免誤觸傾斜
       pitchWithRotate: false,
     });
-    map.touchZoomRotate.disableRotation();
+    const syncBearing = () => {
+      const b = map.getBearing();
+      container.current?.style.setProperty('--b', String(b));
+      setBearing(Math.round(b));
+    };
+    map.on('rotate', syncBearing);
     // 'style.load' 比 'load' 早好多（'load' 要等第一批瓦片），標記同精度圈唔使等底圖
     map.once('style.load', () => setLoaded(true));
     // 用戶自己拖地圖 → 停止自動跟隨，顯示「回到我的位置」
@@ -277,6 +283,8 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
     return () => { map.off('idle', highlight); };
   }, [fix, is3D, loaded]);
 
+  const resetNorth = () => { mapRef.current?.easeTo({ bearing: 0, duration: 500 }); };
+
   const recenter = () => {
     setFollowing(true);
     const map = mapRef.current;
@@ -286,11 +294,18 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
   return (
     <div className="map-wrap">
       <div ref={container} className="map" role="img" aria-label="地圖，藍色「我」標記係你而家嘅位置" />
-      {!following && fix && (
-        <button type="button" className="recenter-btn" onClick={recenter}>
-          <Icon name="target" /> 回到我的位置
-        </button>
-      )}
+      <div className="map-fabs">
+        {bearing !== 0 && (
+          <button type="button" className="fab" onClick={resetNorth} aria-label="指北針：撳一下將地圖轉返向北" title="轉返向北">
+            <span style={{ display: 'inline-flex', transform: `rotate(${-bearing}deg)` }}><Icon name="compass" /></span>
+          </button>
+        )}
+        {!following && fix && (
+          <button type="button" className="fab" onClick={recenter} aria-label="回到我的位置" title="回到我的位置">
+            <Icon name="target" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

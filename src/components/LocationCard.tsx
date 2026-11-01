@@ -13,7 +13,7 @@ function accuracyLabel(acc: number): { text: string; level: 'good' | 'ok' | 'poo
   const m = Math.round(acc);
   // 實測：第一個 fix 話 ±24 m，真實誤差 ~26 m；約 17 秒後先收窄到 ±3 m。所以 ±15 m 以上唔好叫「很準確」
   if (acc <= 15) return { text: `很準確（約 ${m} 米內）`, level: 'good' };
-  if (acc <= 60) return { text: `大致準確（約 ${m} 米內），仍在提升`, level: 'ok' };
+  if (acc <= 60) return { text: `大致準確（約 ${m} 米內）`, level: 'ok' };
   return { text: `不太準確（約 ${m} 米）`, level: 'poor' };
 }
 
@@ -71,7 +71,14 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
 
       {fix && (
         <>
-          <p className="card__eyebrow">你現在位於</p>
+          <div className="card__head">
+            <p className="card__eyebrow">你現在位於</p>
+            {acc && (
+              <p className={`badge badge--${acc.level}`} title={acc.level === 'ok' ? '仍在提升' : undefined}>
+                <Icon name={acc.level === 'poor' ? 'alert' : 'signal'} /> {acc.text}
+              </p>
+            )}
+          </div>
           {headline ? (
             <p className="card__title">{headline}</p>
           ) : (
@@ -114,11 +121,6 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
             <p className="card__sub">未能查到地址，但你仍然可以分享位置。</p>
           )}
           {error?.code === 'outside-hk' && <p className="card__sub">{ERROR_TEXT['outside-hk']}，未能顯示香港地址。</p>}
-          {acc && (
-            <p className={`badge badge--${acc.level}`}>
-              <Icon name={acc.level === 'poor' ? 'alert' : 'signal'} /> {acc.text}
-            </p>
-          )}
           {loc.poorAccuracy && <p className="card__hint">位置可能有偏差：請走到較空曠的地方，再按「重新定位」。</p>}
         </>
       )}
