@@ -31,7 +31,15 @@ export function subscribeFixLog(l: () => void): () => void {
 }
 
 export function fixLogCsv(list: readonly FixSample[] = samples): string {
-  return ['iso_time,lat,lng,accuracy_m,dt_s',
-    ...list.map(s => `${new Date(s.timestamp).toISOString()},${s.lat.toFixed(7)},${s.lng.toFixed(7)},${Number.isFinite(s.accuracy) ? s.accuracy.toFixed(1) : ''},${s.dt.toFixed(1)}`),
+  return ['iso_time,lat,lng,accuracy_m,dt_s,speed_mps,heading_deg',
+    ...list.map(s => [
+      new Date(s.timestamp).toISOString(),
+      s.lat.toFixed(7),
+      s.lng.toFixed(7),
+      Number.isFinite(s.accuracy) ? s.accuracy.toFixed(1) : '',
+      s.dt.toFixed(1),
+      s.speed !== undefined && Number.isFinite(s.speed) ? s.speed.toFixed(2) : '',
+      s.heading !== undefined && Number.isFinite(s.heading) ? s.heading.toFixed(1) : '',
+    ].join(',')),
   ].join('\n');
 }

@@ -21,6 +21,14 @@ const PATHS = {
   target: 'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z',
   lock: 'M6 11h12v9H6z M9 11V8a3 3 0 0 1 6 0v3',
   check: 'M5 13l4 4L19 7',
+  // 實時分享 banner 嘅紅點（配 .icon--filled 使用）
+  dot: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
+  // 停止（正方形）：一鍵停止分享
+  square: 'M7 7h10v10H7z',
+  // 太陽：保持螢幕著（Screen Wake Lock opt-in）
+  sun: 'M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M12 2v2.5 M12 19.5V22 M2 12h2.5 M19.5 12H22 M4.9 4.9l1.8 1.8 M17.3 17.3l1.8 1.8 M19.1 4.9l-1.8 1.8 M6.7 17.3l-1.8 1.8',
+  // 兩個人：實時分享入口
+  people: 'M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M2 20c0-3.3 2.7-5 6-5s6 1.7 6 5 M16 5.5a3 3 0 0 1 0 5.8 M17 15.2c2.6.4 4.5 1.9 4.5 4.8',
 } as const;
 
 export type IconName = keyof typeof PATHS;

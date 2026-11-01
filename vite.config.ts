@@ -26,5 +26,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Worker / DO 測試用另一個 config（vitest.worker.config.ts，跑喺 workerd）
+    exclude: ['**/node_modules/**', 'worker/**'],
   },
 });

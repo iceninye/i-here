@@ -81,7 +81,12 @@ Google 地圖：https://www.google.com/maps/search/?api=1&query=22.408010,113.97
 - **一個畫面、一個主要動作**：上面係位置卡，中間係地圖，下面係成個闊度、80 px 高嘅綠色「分享我的位置」。
 - **大字**：地名 28–38 px 粗體，地址 20 px；全部用 `rem`，跟手機「字體大小」設定放大。
 - **用說話，唔用術語**：「很準確（約 18 米內）」而唔係「±18 m」；冇「HK80」「座標」呢啲字眼。
-- **標記有字**：藍色「我」、紅色「對方」，唔使識睇藍點。
+- **標記有字**：藍色「我」、橙色「對方」（實時分享）、紅色「對方」（靜態分享連結），唔使識睇藍點。
+- **移動中先至平滑**：「我」同對方嘅 marker 用 rAF + speed / heading 外推（≤1.5 s），行路車路唔會一格一格跳；方位角已知時 marker 有箭咀指住行緊嘅方向（未知就唔顯示 —— 未知 ≠ 向北）。靜止時完全唔外推，避免 GPS 抖動令個點游移。
+- **訊號丟失講得出**：>10 s 冇新 fix 就顯示「訊號丟失 · 最後已知位置」，pin 變灰、精度圈變虛線、停止外推（隧道 / 室內唔會假裝仲追到）。
+- **高速時顯示街名而唔係大廈名**：`fast` 狀態下地名查詢節流放寬到 200 m / 20 s，並優先揀街道（`addressType: 'ST'`），乘客都知自己喺邊條路。
+- **「附近有咩」**：位置卡底部可展開清單（交通、便利店、診所、公廁、郵政、景點），每項有距離同方向；政府資料集冇食肆（見 PLAN §4.7 / D2）。
+- **螢幕保持亮著要 opt-in**：實時分享期間自動申請 Screen Wake Lock，或者自己撳「保持螢幕著」；唔支援嘅裝置靜默降級，只提一句「螢幕可能會自動關閉」（PWA 冇背景定位，熄屏就冇 GPS）。
 - **防誤觸**：停用地圖旋轉；拖動地圖後出現「回到我的位置」，唔會自己飛走。
 - **出錯都有路行**：權限被拒時直接教 iPhone / Android 點開；冇地址時講明「仍然可以分享」。
 - **無障礙**：只有一行隱藏嘅 `role=status` 會被讀屏器讀出（唔會成張卡反覆讀）；按鈕有文字（emoji 設 `aria-hidden`）；焦點框 4 px 黃色；`prefers-reduced-motion` 停動畫；觸控目標 ≥ 56 px。
@@ -105,18 +110,42 @@ Google 地圖：https://www.google.com/maps/search/?api=1&query=22.408010,113.97
 ### 部署
 
 - **GitHub Pages**：push 去 `main` 自動 build + 部署（`.github/workflows/deploy.yml`）。第一次要喺 repo **Settings → Pages → Source** 揀 **GitHub Actions**。
-- **Cloudflare Workers Builds**：根目錄 `wrangler.jsonc` 會先跑 `npm run build`，再將 `dist/` 當靜態資源部署（同 mtr-app 一樣冇 Worker script）。
-- 可選 Actions variables：`VITE_OSM_FALLBACK`、`VITE_LANDSD_3DTILES_URL`（見 `.env.example`）。
+- **Cloudflare Workers**：根目錄 `wrangler.jsonc` 已經唔係純靜態部署 —— `main: worker/index.ts` 提供 `/api/*`（實時分享），其餘路徑由 `assets`（`dist/`）服務，`run_worker_first: ["/api/*"]` 令 API 先入 Worker。部署：`npx wrangler deploy`（或 Workers Builds，build command `npm run build`）。
+- 可選 Actions variables：`VITE_OSM_FALLBACK`、`VITE_LANDSD_3DTILES_URL`、`VITE_LIVE_API`（見 `.env.example`）。
 - PR 會自動跑測試同 build（`.github/workflows/ci.yml`）。
+
+## 6. 實時雙向位置分享（`worker/` + `src/lib/liveShare.ts`）
+
+兩個人互相睇到對方實時位置（§5，PLAN）。**核心限制**：PWA 冇背景定位，雙方都要保持畫面開著前景。
+
+```
+瀏覽器 A ──WebSocket──► Cloudflare Worker（/api/live/ws）──► Durable Object「LiveShareRoom」──► 瀏覽器 B
+                          只中轉密文，永遠解唔到座標
+```
+
+- **建房**：`POST /api/live` → `{ roomId, hostToken, expiresAt }`（TTL 預設 30 分鐘，用 DO alarm 到期關房）。
+- **加入**：link 係 `https://<host>/#live=<roomId>&k=<key>`。**roomId 同 AES key 只喺 fragment**，唔會送去 server（唔入 access log、唔洩漏落 Referer）；WebSocket 嘅 roomId 經 `Sec-WebSocket-Protocol` 傳（URL 完全冇 roomId），DO 要喺 upgrade 時揀 stub，所以唔可以等連線後嘅 `hello`。
+- **E2EE**（`src/lib/liveCrypto.ts`）：AES-GCM 256，key 由建房嗰部機產生並只放喺 fragment；每條訊息新 96-bit IV，`additionalData = roomId`（搬去另一個房解唔到）；`seq` 做重放保護。Server 見到嘅只有 `type`、`iv`、`ct` 大細、時間、IP。
+- **唔持久化**：DO 記憶體只保留每個 peer 嘅最後一條**密文**（新加入 / 重連即刻補發），storage 只有 `{ roomId, hostToken, expiresAt }`，冇任何座標。房散即冇。
+- **防濫用**：明確 opt-in 說明 + 畫面常駐「正在分享實時位置」+ 一鍵停止；peer 上限 2（第三個連線直接拒絕）；房主可以踢走；單條 ≤512 byte、每 peer ≤2 條 / s；`POST /api/live` 每 IP 每分鐘限速；WS 做 `Origin` 檢查。
+- **狀態由 server 判斷**：client 每 5 s ping（有 fix 亦算心跳），>10 s 冇訊息就廣播「訊號丟失」；頁面去背景盡力送 `paused`（suspend 前未必送得出，所以有心跳兜底）。
+- **對方 marker**：橙色，用自己嘅 speed / heading 做同「我」一樣嘅外推插值（≤1.5 s）。
+- **設定**：build 時設 `VITE_LIVE_API=https://i-here.<user>.workers.dev`；留空就完全隱藏入口（GitHub Pages 未接 Worker 時唔會出現半個功能）。
+- **量延遲**：網址加 `?debug=1`，診斷面板嘅 `live:` 行有 RTT 同中轉延遲（ping / pong 做 NTP 式鐘差估算，目標 p95 < 300 ms）。
+- **測試**：`npm run test:worker`（跑喺 workerd，`@cloudflare/vitest-plugin`）驗證 subprotocol 路由、密文原封中轉、storage 冇座標、滿員拒絕、TTL alarm。
 
 ## 🛠️ 本機開發
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173（定位要 localhost 或 HTTPS）
-npm test           # 單元測試（定位取樣、HK80 轉換、地址解析、分享文字）
+npm test           # 前端單元測試（定位取樣、HK80、地址解析、E2EE、分享文字）
+npm run test:worker # Worker / Durable Object 測試（跑喺 workerd）
+npm run typecheck  # 前端 + worker 兩套 tsconfig
 npm run build
 ```
+
+想試實時分享：`npx wrangler dev`（Worker + DO 本機跑），然後 `.env.local` 設 `VITE_LIVE_API=http://localhost:8787` 再起 `npm run dev`。
 
 手機實測：`npm run dev -- --host`，再用 `ngrok` / Cloudflare Tunnel 開 HTTPS。
 
@@ -125,15 +154,28 @@ npm run build
 ```
 src/
   hooks/useCurrentLocation.ts   定位 → HK80 → 地標 / 地址（核心 hook）
+  hooks/useLiveShare.ts         實時分享 state：建房 / 加入、1 Hz 送 fix、peer 狀態、TTL、停止
+  hooks/useWakeLock.ts          Screen Wake Lock（分享期間保持螢幕亮著；唔支援就靜默降級）
   lib/geo.ts                    取樣窗定位、範圍檢查、距離（移植自 mtr-app）
+  lib/motion.ts                 運動狀態機（still / walking / fast，有 hysteresis）
+  lib/interpolate.ts            marker 外推插值（≤1.5 s，speed + heading）
   lib/hk80.ts                   坐標轉換 API + proj4 後備
-  lib/reverseGeocode.ts         identify API + ALS 地址補全
+  lib/reverseGeocode.ts         identify API + ALS 地址補全 +「附近有咩」
   lib/shareText.ts              分享訊息、WhatsApp / SMS / 收件人連結
+  lib/liveCrypto.ts             AES-GCM E2EE：key 匯出入、加解密、重放保護
+  lib/liveShare.ts              join link fragment、建房、WebSocket client（subprotocol 帶 roomId）
   components/ShareButton.tsx    Web Share API + 後備選單
-  components/LocationCard.tsx   大字位置卡
-  components/MapView.tsx        MapLibre 地圖、精度圈、2D / 3D
+  components/LocationCard.tsx   大字位置卡（速度、訊號丟失、附近有咩）
+  components/MapView.tsx        MapLibre 地圖、精度圈、插值、2D / 3D、對方 marker
+  components/LiveShareBanner.tsx   常駐「正在分享實時位置 · 剩 mm:ss · 停止」
+  components/LiveShareConsent.tsx  opt-in 私隱說明（同意先開始）
   components/landsd3dTiles.ts   地政總署 3D Tiles（lazy）
-wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
+worker/
+  index.ts                      /api/live（建房）、/api/live/ws（upgrade → DO）、CORS、靜態資產
+  liveShareRoom.ts              Durable Object：房間、心跳、TTL alarm、密文中轉
+  http.ts                       Origin 白名單、CORS、每 IP rate limit
+wrangler.jsonc                  Worker + assets + Durable Object（SQLite class）設定
+wrangler.test.jsonc             測試專用設定（vitest workerd）
 ```
 
 ## 📏 定位實測（iPhone，錦上路站 D 出口，靜止約 75 秒）
@@ -155,12 +197,16 @@ wrangler.jsonc                  Cloudflare Workers Builds 靜態部署設定
 - **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」（第一行 `build:` 係版本，手機有時會跑緊舊快取，貼紀錄時請連埋呢行）：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
 - 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片）：開立體圖時會向 OpenFreeMap 要圖磚，等於將畫面範圍告訴佢；之後會改用自己託管嘅資料。
 - 北區同深圳交界一帶，經緯度範圍檢查無可避免會重疊；嗰度 identify 搵唔到大廈就只顯示座標。
+- **實時分享仲未做真機驗證**（sandbox 冇 Cloudflare 憑證、亦冇兩部手機）：`wrangler deploy` 之後要 smoke test `POST /api/live` 同 WS upgrade（`run_worker_first` 同 static assets 嘅互動，PLAN §6.1 標明「待驗證」）、用 WhatsApp / 短訊實傳 link 確認 `#` 後面嘅 key 完整、iOS 分頁被丟棄後還原靠 `sessionStorage` 重連、以及中轉延遲 p95。
+- 移動中（步行 / 車行 / 隧道）嘅定位準確度**未量度**：`src/lib/fixLog.ts` 嘅 CSV（`?debug=1` 可以複製）已經有 speed / heading，需要真實紀錄先可以調 §4.2 嘅門檻。
 
 ## 🔒 私隱
 
-- 冇後端、冇帳戶、冇 cookies、冇追蹤。
+- 冇帳戶、冇 cookies、冇追蹤。定位同查地址完全喺瀏覽器做。
 - 位置只會送去政府 API（identify、searchNearby、ALS，同埋地政總署地圖瓦片）用嚟查地址 / 顯示地圖；只有你撳「分享」先會傳俾你揀嘅人。
 - 例外：開「立體圖」會向 OpenFreeMap 要建築物圖磚（只含畫面範圍）。
+- **實時分享（要主動 opt-in 先會開始）**：座標經 i-here 嘅 Cloudflare Worker 中轉，但**全部係 AES-GCM 密文**，key 只喺 link 嘅 `#` fragment（唔會送去 server），所以 server 睇唔到亦儲唔到座標。房間 30 分鐘自動結束，隨時可以停止或者踢走對方；房間關閉即所有資料消失（DO 記憶體 + 一個到期時間，冇座標 log）。server 仍然會見到連線元數據（IP、時間、訊息大細），呢啲喺香港《個人資料（私隱）條例》下亦可能算個人資料 —— 所以入口預設關閉、開始前要明確同意。
+- **注意**：join link 本身係 bearer secret —— **有完整 link 嘅人都睇到你嘅位置**，只傳俾你信任嘅人。
 
 ---
 

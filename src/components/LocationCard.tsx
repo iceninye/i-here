@@ -1,6 +1,12 @@
 import type { CurrentLocation } from '../hooks/useCurrentLocation';
+import type { NearbyCategory } from '../lib/reverseGeocode';
 import { placeHeadline } from '../lib/shareText';
 import { Icon } from './Icon';
+
+const CAT_LABEL: Record<NearbyCategory, string> = {
+  transport: '交通', convenience: '便利店/超市', medical: '診所/醫療',
+  toilet: '公廁', postal: '郵政', attraction: '景點', other: '其他',
+};
 
 function accuracyLabel(acc: number): { text: string; level: 'good' | 'ok' | 'poor' } {
   if (!Number.isFinite(acc)) return { text: '準確度未知', level: 'poor' };
@@ -78,6 +84,26 @@ export function LocationCard({ loc }: { loc: CurrentLocation }) {
             <p className="card__landmarks">
               附近還有：{place.landmarks.map(l => (Math.round(l.distanceM) > 0 ? `${l.name}（${Math.round(l.distanceM)} 米）` : l.name)).join('、')}
             </p>
+          )}
+          {loc.motion === 'fast' && loc.speedKmh != null && (
+            <p className="card__sub">移動中 · 約 {loc.speedKmh} km/h（高速時地址較少更新）</p>
+          )}
+          {loc.signalLost && (
+            <p className="card__sub card__sub--warn"><Icon name="alert" /> 訊號丟失 · 顯示最後已知位置</p>
+          )}
+          {place && place.nearby.length > 0 && (
+            <details className="nearby">
+              <summary className="nearby__summary">附近有咩（{place.nearby.length}）</summary>
+              <ul className="nearby__list">
+                {place.nearby.map(n => (
+                  <li key={n.name} className="nearby__item">
+                    <span className="nearby__cat">{CAT_LABEL[n.category]}</span>
+                    <span className="nearby__name">{n.name}</span>
+                    <span className="nearby__meta">{n.direction ? `${n.direction} · ` : ''}{Math.round(n.distanceM)} 米</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
           {place?.source === 'osm' && <p className="card__source">地址資料來源：OpenStreetMap</p>}
           {(placeStatus === 'failed' || placeStatus === 'not-found') && !place && (

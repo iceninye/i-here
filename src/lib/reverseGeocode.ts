@@ -34,6 +34,8 @@ export interface ResolvedPlace {
   address?: string;
   /** 另外幾個附近地標，幫手對照 */
   landmarks: PlaceCandidate[];
+  /** 「附近有咩」清單（PLAN §4.7）：分組、距離、方位 */
+  nearby: NearbyItem[];
   source: PlaceSource;
 }
 
@@ -125,9 +127,17 @@ function eligibleAsTitle(c: PlaceCandidate): boolean {
   return isTitleEligible(c.name) && Number.isFinite(c.distanceM) && c.distanceM <= KIND_MAX_M[c.kind];
 }
 
-export function pickTitle(cands: PlaceCandidate[]): PlaceCandidate | undefined {
-  return cands
-    .filter(eligibleAsTitle)
+export function pickTitle(cands: PlaceCandidate[], opts: { preferStreet?: boolean } = {}): PlaceCandidate | undefined {
+  const eligible = cands.filter(eligibleAsTitle);
+  // fast 狀態（§4.3）：高速下大廈名冇意義，優先顯示街名（identify 對街道回 addressType 'ST'）。
+  // 有合資格街道就用最近嗰條；完全冇街道先退回正常揀法。
+  if (opts.preferStreet) {
+    const streets = eligible
+      .filter(c => c.kind === 'street')
+      .sort((a, b) => a.distanceM - b.distanceM);
+    if (streets[0]) return streets[0];
+  }
+  return eligible
     .sort((a, b) => a.distanceM + KIND_PENALTY[a.kind] - (b.distanceM + KIND_PENALTY[b.kind]))[0];
 }
 
@@ -138,6 +148,81 @@ export function pickLandmarks(cands: PlaceCandidate[], title: PlaceCandidate): P
     .sort((a, b) => a.distanceM - b.distanceM)
     .filter((c, i, arr) => arr.findIndex(o => o.name === c.name) === i)
     .slice(0, 3);
+}
+
+/* ---------------- 「附近有咩」清單（PLAN §4.7） ---------------- */
+
+/**
+ * searchNearby 係**政府設施資料集**，唔係商戶目錄 —— 冇食肆（D2 決定唔自建資料）。
+ * 清單用**獨立**規則，唔好重用 TITLE_BLACKLIST（佢會連公廁一齊濾走；對迷路嘅人公廁係有用資料）。
+ */
+export type NearbyCategory = 'transport' | 'convenience' | 'medical' | 'toilet' | 'postal' | 'attraction' | 'other';
+
+export interface NearbyItem {
+  name: string;
+  category: NearbyCategory;
+  distanceM: number;
+  /** 8 方位（東/南/西/北…）；候選冇 HK80 座標時 undefined */
+  direction?: string;
+  address?: string;
+}
+
+/** 清單要排除嘅（熱點、泊車位、AED、回收、郵箱、純設施）—— 但保留公廁、郵政局、智郵站 */
+const NEARBY_EXCLUDE =
+  /wi-?fi|熱點|泊車位|停車位|咪錶|路旁|電動車|充電|停車場|泊車處|car ?park|除顫器|\baed\b|回收|垃圾|郵箱|郵筒|信箱|升降機|扶手電梯|扶手梯|電梯|樓梯|通道/i;
+
+const NEARBY_RADIUS_M = 500;
+const NEARBY_PER_CAT = 2;
+const NEARBY_TOTAL = 8;
+
+export function isNearbyEligible(name: string): boolean {
+  return !!name && !NEARBY_EXCLUDE.test(name);
+}
+
+export function nearbyCategory(name: string, kind: PlaceKind): NearbyCategory {
+  if (kind === 'transport' || /站$|進出口|出口|入口|碼頭|總站|巴士|輕鐵|港鐵|地鐵/.test(name)) return 'transport';
+  if (/便利店|超級市場|超市|7-11|惠康|百佳/.test(name)) return 'convenience';
+  if (/診所|醫務中心|醫療|藥房|藥行|醫院|健康中心|牙科/.test(name)) return 'medical';
+  if (/公廁|公共廁所|洗手間|廁所/.test(name)) return 'toilet';
+  if (/郵政局|智郵站|郵政署/.test(name)) return 'postal';
+  if (/古蹟|故居|寺|廟|堂|墳場|墓|泳灘|海灘|炮台|燈塔|文物|紀念/.test(name)) return 'attraction';
+  return 'other';
+}
+
+const DIRS = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'];
+/** 由 HK80 東移 / 北移計 8 方位 */
+export function directionFrom(dx: number, dy: number): string {
+  const deg = (Math.atan2(dx, dy) * 180) / Math.PI;
+  return DIRS[Math.round(((deg + 360) % 360) / 45) % 8];
+}
+
+/**
+ * 「附近有咩」：半徑 ≤500 m，按距離，每組最近最多 2 個，總數最多 8 個，附距離 + 方位。
+ * 同只出 3 個對照地標嘅 pickLandmarks 分開。
+ */
+export function pickNearbyList(cands: PlaceCandidate[], origin: Origin): NearbyItem[] {
+  const eligible = cands
+    .filter(c => isNearbyEligible(c.name) && Number.isFinite(c.distanceM) && c.distanceM <= NEARBY_RADIUS_M)
+    .sort((a, b) => a.distanceM - b.distanceM);
+
+  const perCat = new Map<NearbyCategory, number>();
+  const seen = new Set<string>();
+  const picked: NearbyItem[] = [];
+  for (const c of eligible) {
+    if (picked.length >= NEARBY_TOTAL) break;
+    if (seen.has(c.name)) continue;
+    const category = nearbyCategory(c.name, c.kind);
+    const n = perCat.get(category) ?? 0;
+    if (n >= NEARBY_PER_CAT) continue; // 每組最多 2 個，保持多樣
+    seen.add(c.name);
+    perCat.set(category, n + 1);
+    const item: NearbyItem = { name: c.name, category, distanceM: Math.round(c.distanceM), address: c.address };
+    if (c.x !== undefined && c.y !== undefined) {
+      item.direction = directionFrom(c.x - origin.x, c.y - origin.y);
+    }
+    picked.push(item);
+  }
+  return picked;
 }
 
 function distanceTo(o: Record<string, unknown>, origin: Origin): number {
@@ -337,6 +422,7 @@ function toPlace(
   c: PlaceCandidate,
   source: PlaceSource,
   landmarks: PlaceCandidate[],
+  nearby: NearbyItem[] = [],
   accuracy = AT_THRESHOLD_M,
 ): ResolvedPlace {
   return {
@@ -346,6 +432,7 @@ function toPlace(
     kind: c.kind,
     address: c.address,
     landmarks,
+    nearby,
     source,
   };
 }
@@ -413,6 +500,7 @@ export async function reverseGeocode(
   at: { lat: number; lng: number; accuracy?: number },
   signal?: AbortSignal,
   onPartial?: (place: ResolvedPlace) => void,
+  opts: { preferStreet?: boolean } = {},
 ): Promise<ResolvedPlace | null> {
   const origin: Origin = { x: p.x, y: p.y, lat: at.lat, lng: at.lng };
   const acc = at.accuracy ?? AT_THRESHOLD_M;
@@ -422,25 +510,25 @@ export async function reverseGeocode(
   const nearbyP = tryParse(`${ENDPOINTS.searchNearby}?${qs}`, 'searchNearby', j => parseNearby(j, origin), signal);
 
   const identified = await identifyP;
-  let title = pickTitle(identified);
+  let title = pickTitle(identified, opts);
   let source: PlaceSource = 'identify';
 
   // identify 一回就先顯示（~1 s）；之後 searchNearby 一回再比較一次，更貼身嘅（例如 23 米外嘅車站出口
   // 勝過 79 米外嘅屋苑）會取代佢
-  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title), acc));
+  if (title) onPartial?.(toPlace(title, source, pickLandmarks(identified, title), pickNearbyList(identified, origin), acc));
   const first = title;
 
   const nearby = await nearbyP;
-  const best = pickTitle([...identified, ...nearby]);
+  const best = pickTitle([...identified, ...nearby], opts);
   if (best) {
     title = best;
     source = identified.includes(best) ? 'identify' : 'nearby';
-    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best), acc));
+    if (best !== first) onPartial?.(toPlace(best, source, pickLandmarks([...identified, ...nearby], best), pickNearbyList([...identified, ...nearby], origin), acc));
   }
 
   if (!title && OSM_FALLBACK) {
     const osm = await tryOsm(origin, signal);
-    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [], acc)); }
+    if (osm) { title = osm; source = 'osm'; onPartial?.(toPlace(osm, source, [], [], acc)); }
   }
   if (!title) return null;
 
@@ -448,7 +536,7 @@ export async function reverseGeocode(
   // 街名唔使查 ALS：實測 ALS 對「天福路」會回沙田嘅結果，只會白白多一個請求
   const address = chosen.kind === 'street' ? undefined : await lookupAls(chosen, p, signal);
   return {
-    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen), acc),
+    ...toPlace(chosen, source, pickLandmarks([...identified, ...nearby], chosen), pickNearbyList([...identified, ...nearby], origin), acc),
     address: address ?? chosen.address,
   };
 }

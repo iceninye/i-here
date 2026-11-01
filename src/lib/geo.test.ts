@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GeoError, acquireBestFix, haversineM, isInHongKong } from './geo';
+import { GeoError, acquireBestFix, derivedSpeed, haversineM, isInHongKong, toFix, type Fix } from './geo';
 
 type Success = (p: GeolocationPosition) => void;
 type Failure = (e: GeolocationPositionError) => void;
@@ -98,5 +98,54 @@ describe('acquireBestFix does not blend fixes (real cold start at Kam Sheung Roa
     rows.forEach(([la, lo, ac]) => g.pos(la, lo, ac));
     const fix = await p;
     expect([fix.lat, fix.lng, fix.accuracy]).toEqual([22.4340508, 114.0635697, 16.0]);
+  });
+});
+
+const mkFix = (lat: number, lng: number, accuracy: number, timestamp: number, extra?: Partial<Fix>): Fix =>
+  ({ lat, lng, accuracy, timestamp, ...extra });
+
+describe('toFix speed / heading', () => {
+  const position = (coords: Partial<GeolocationCoordinates>): GeolocationPosition =>
+    ({ coords: { latitude: 22.3, longitude: 114.1, accuracy: 10, ...coords }, timestamp: 1 } as GeolocationPosition);
+
+  it('keeps finite non-negative speed and heading', () => {
+    const f = toFix(position({ speed: 5, heading: 90 }))!;
+    expect(f.speed).toBe(5);
+    expect(f.heading).toBe(90);
+  });
+
+  it('treats null speed/heading as unknown (undefined), not 0', () => {
+    const f = toFix(position({ speed: null, heading: null }))!;
+    expect(f.speed).toBeUndefined();
+    expect(f.heading).toBeUndefined();
+  });
+
+  it('treats negative (invalid) speed/heading as unknown', () => {
+    const f = toFix(position({ speed: -1, heading: -1 }))!;
+    expect(f.speed).toBeUndefined();
+    expect(f.heading).toBeUndefined();
+  });
+});
+
+describe('derivedSpeed', () => {
+  it('returns undefined when the time gap is too small', () => {
+    expect(derivedSpeed(mkFix(22.3, 114.1, 10, 0), mkFix(22.3002, 114.1, 10, 100))).toBeUndefined();
+  });
+
+  it('returns 0 for sub-accuracy jitter (stationary)', () => {
+    // ~2.2 m apart, accuracy 10 m → treated as not moving
+    expect(derivedSpeed(mkFix(22.30000, 114.1, 10, 0), mkFix(22.30002, 114.1, 10, 1000))).toBe(0);
+  });
+
+  it('estimates speed from real displacement over the time gap', () => {
+    // ~22.2 m apart in 1 s, accuracy 10 m → ~22 m/s
+    const v = derivedSpeed(mkFix(22.30000, 114.1, 10, 0), mkFix(22.30020, 114.1, 10, 1000))!;
+    expect(v).toBeGreaterThan(18);
+    expect(v).toBeLessThan(26);
+  });
+
+  it('uses the larger accuracy of the pair as the noise floor', () => {
+    // 20 m apart but accuracy 30 m → within noise → 0
+    expect(derivedSpeed(mkFix(22.30000, 114.1, 30, 0), mkFix(22.30018, 114.1, 10, 1000))).toBe(0);
   });
 });
