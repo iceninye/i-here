@@ -119,12 +119,32 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       setBearing(Math.round(b));
     };
     map.on('rotate', syncBearing);
+    // 地圖版權（© 地政總署）預設收埋，撳 ⓘ 先展開。MapLibre 會喺初始化 / 載入底圖時自動重新展開，
+    // 所以用 MutationObserver：未經用戶撳過就即刻收返。
+    let attribOpen = false;
+    const attribObserver = new MutationObserver(() => {
+      const el = container.current?.querySelector('.maplibregl-ctrl-attrib');
+      if (!el) return;
+      if (!attribOpen && el.classList.contains('maplibregl-compact-show')) {
+        el.classList.remove('maplibregl-compact-show');
+        el.removeAttribute('open');
+      }
+    });
+    const hookAttrib = () => {
+      const el = container.current?.querySelector('.maplibregl-ctrl-attrib');
+      if (!el) return;
+      el.querySelector('.maplibregl-ctrl-attrib-button')?.addEventListener('click', () => { attribOpen = !attribOpen; }, true);
+      attribObserver.observe(el, { attributes: true, attributeFilter: ['class', 'open'] });
+      el.classList.remove('maplibregl-compact-show');
+      el.removeAttribute('open');
+    };
+    hookAttrib();
     // 'style.load' 比 'load' 早好多（'load' 要等第一批瓦片），標記同精度圈唔使等底圖
     map.once('style.load', () => setLoaded(true));
     // 用戶自己拖地圖 → 停止自動跟隨，顯示「回到我的位置」
     map.on('dragstart', e => { if (e.originalEvent) setFollowing(false); });
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
+    return () => { attribObserver.disconnect(); map.remove(); mapRef.current = null; };
     // sharedPin 只用作初始視角
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -237,8 +237,7 @@ body { background: var(--bg); overscroll-behavior: none; }
 .share-btn:disabled { background: var(--border-strong); color: var(--ink-2); box-shadow: none; }
 .share-btn--secondary { background: var(--brand); color: var(--brand-ink); box-shadow: 0 6px 18px var(--brand-shadow); }
 .share-result { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 1.4em; margin: 4px 0 0; font-weight: 700; color: var(--good-ink); }
-.tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
-.tools--more { margin-top: 8px; }
+.tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); gap: 8px; margin-top: 4px; }
 .tool-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
   min-height: 48px; border-radius: var(--r-md); border: 2px solid var(--border-strong);
@@ -246,7 +245,10 @@ body { background: var(--bg); overscroll-behavior: none; }
   font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
 }
 .tool-btn .icon { font-size: 1.1rem; }
-.tool-btn--more { color: var(--ink-2); }
+.more-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 4px; margin: 4px auto 0; min-height: 36px; padding: 0 16px;
+  border: none; background: none; font: inherit; font-size: var(--text-sm); font-weight: 700; color: var(--ink-2); cursor: pointer; touch-action: manipulation;
+}
 .chev { font-size: 0.8em; }
 .tool-btn[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-soft-ink); }
 .tool-btn:disabled { opacity: 0.5; }
