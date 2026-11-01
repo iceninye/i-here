@@ -14,6 +14,9 @@
     // 靜態資產照舊先服務；只有 /api/* 先入 Worker（live share 建房 + WebSocket upgrade）。
     "run_worker_first": ["/api/*"]
   },
+  // 容許跨域 call /api/* 嘅 Origin（D11 = B：GitHub Pages 前端）。同源（Worker 自己）永遠放行。
+  // 要加 preview / 自訂網域就逗號分隔，例：`https://iceninye.github.io,https://*.workers.dev`。
+  "vars": { "ALLOWED_ORIGINS": "https://iceninye.github.io" },
   "durable_objects": {
     "bindings": [{ "name": "LIVE_SHARE", "class_name": "LiveShareRoom" }]
   },

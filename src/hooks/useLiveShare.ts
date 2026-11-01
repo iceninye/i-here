@@ -43,6 +43,8 @@ interface StoredSession {
   hostToken?: string;
   role: LiveRole;
   expiresAt: number;
+  /** 打開 link 但未撳同意：reload 後要再問，唔可以自動連線 */
+  pending?: boolean;
 }
 
 function readSession(): StoredSession | null {
@@ -236,12 +238,14 @@ export function useLiveShare(fix: Fix | null): LiveShareState {
         return;
       }
       setPendingJoin({ roomId: frag.roomId, key: frag.key });
-      if (frag.key) writeSession({ roomId: frag.roomId, key: frag.key, role: 'guest', expiresAt: Date.now() + LIVE_TTL_MINUTES * 60000 });
+      if (frag.key) writeSession({ roomId: frag.roomId, key: frag.key, role: 'guest', expiresAt: Date.now() + LIVE_TTL_MINUTES * 60000, pending: true });
       // 清走 fragment（§5.2.1）：之後 reload 靠 sessionStorage
       history.replaceState(null, '', location.pathname + location.search);
       return;
     }
     const s = readSession();
+    // 未同意就 reload：還原成「等同意」，唔好自動連線
+    if (s?.pending) { setPendingJoin({ roomId: s.roomId, key: s.key }); return; }
     // 同一個分頁已經同意過（reload / iOS 還原）→ 直接重連，唔使再問
     if (s) connect(s, s.role === 'host' ? buildLiveLink({ roomId: s.roomId, key: s.key }) : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
