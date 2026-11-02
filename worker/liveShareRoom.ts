@@ -16,6 +16,8 @@
 interface PeerState {
   id: string;
   host: boolean;
+  /** client 自己產生嘅連線身份：同一個 client 重連（舊 socket 半死）可以頂替舊連線，唔會佔多個位 */
+  cid?: string;
   /** server 收到最後一個訊息嘅 epoch ms（心跳用） */
   lastSeen: number;
   state: 'joined' | 'live' | 'paused' | 'lost';
@@ -168,6 +170,17 @@ export class LiveShareRoom {
     if (msg.roomId !== meta.roomId) return this.close(ws, 1008, 'wrong room');
 
     const isHost = typeof msg.token === 'string' && msg.token === meta.hostToken;
+    const cid = typeof msg.cid === 'string' && msg.cid.length > 0 && msg.cid.length <= 32 ? msg.cid : undefined;
+    // 同一個 client 重連：舊 socket 可能係半死（手機切去背景 / 轉網絡，server 未知）→ 頂替佢，否則重連會被當第三人拒絕
+    if (cid) {
+      for (const [other, st] of this.peers) {
+        if (other !== ws && st.cid === cid) {
+          this.peers.delete(other);
+          try { other.close(1000, 'replaced'); } catch { /* already closed */ }
+          this.broadcast({ type: 'peer', id: st.id, state: 'left' });
+        }
+      }
+    }
     // 踢過人之後鎖房：非房主一律拒絕
     if (meta.locked && !isHost) {
       this.send(ws, { type: 'ended', reason: 'kicked' });
@@ -184,6 +197,7 @@ export class LiveShareRoom {
     const peer: PeerState = {
       id: randToken(8),
       host: isHost,
+      cid,
       lastSeen: Date.now(),
       state: 'joined',
       winStart: Date.now(),
@@ -203,8 +217,6 @@ export class LiveShareRoom {
       this.send(ws, { type: 'peer', id: st.id, state: st.state });
       if (st.lastFix) this.send(ws, { type: 'fix', from: st.id, iv: st.lastFix.iv, ct: st.lastFix.ct, serverTs: st.lastFix.serverTs });
     }
-    // 房主身份告知自己（client 用來顯示「踢走」掣）
-    this.send(ws, { type: 'peer', id: peer.id, state: 'joined' });
   }
 
   private handleFix(ws: WebSocket, peer: PeerState, msg: Record<string, unknown>): void {
@@ -217,7 +229,8 @@ export class LiveShareRoom {
     const serverTs = Date.now();
     peer.lastFix = { iv, ct, serverTs };
     // fix 視為心跳 → live
-    if (peer.state !== 'live') { peer.state = 'live'; this.broadcast({ type: 'peer', id: peer.id, state: 'live' }); }
+    // （唔好 echo 返俾本人：否則對方清單入面會多一個「自己」）
+    if (peer.state !== 'live') { peer.state = 'live'; this.broadcast({ type: 'peer', id: peer.id, state: 'live' }, ws); }
     ws.serializeAttachment(peer);
     this.broadcast({ type: 'fix', from: peer.id, iv, ct, serverTs }, ws);
   }
@@ -225,7 +238,7 @@ export class LiveShareRoom {
   private setPeerState(ws: WebSocket, peer: PeerState, state: PeerState['state']): void {
     peer.state = state;
     ws.serializeAttachment(peer);
-    this.broadcast({ type: 'peer', id: peer.id, state });
+    this.broadcast({ type: 'peer', id: peer.id, state }, ws);
   }
 
   private async handleKick(ws: WebSocket, peer: PeerState, msg: Record<string, unknown>): Promise<void> {

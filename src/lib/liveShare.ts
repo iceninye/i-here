@@ -68,7 +68,7 @@ export async function createRoom(apiBase = LIVE_API): Promise<CreatedRoom> {
 
 /** client → server 訊息（位置係密文；控制訊息明文，無位置） */
 type ClientMsg =
-  | { type: 'hello'; roomId: string; token?: string }
+  | { type: 'hello'; roomId: string; token?: string; cid?: string }
   | ({ type: 'fix' } & EncryptedFix)
   | { type: 'ping' } | { type: 'paused' } | { type: 'resume' } | { type: 'stop' }
   | { type: 'kick'; peerId: string };
@@ -120,6 +120,8 @@ export interface LiveClientOptions {
   key: string;
   /** 建房者先有；加入者留空 */
   hostToken?: string;
+  /** 連線身份（同一個 client 重連時 server 用嚟頂替舊連線） */
+  clientId?: string;
   apiBase?: string;
   handlers?: LiveClientHandlers;
 }
@@ -138,6 +140,9 @@ export class LiveClient {
   private pingSentAt = 0;
   /** 上一條送出嘅訊息時刻：server 限每 peer 2 條 / s（§5.2），fix 本身已算心跳 */
   private lastMsgAt = 0;
+  /** 最後一次送出嘅位置（未加密）：重連 / 返前景 / 定位靜止時重送，確保對方一定有最新位置 */
+  private lastFixSrc: { lat: number; lng: number; accuracy: number; speed?: number; heading?: number } | null = null;
+  private tick = 0;
   private rttMs: number | null = null;
   /** 本地鐘 − server 鐘（ms） */
   private clockOffset = 0;
@@ -167,7 +172,10 @@ export class LiveClient {
       this.retry = 0;
       const hello: ClientMsg = { type: 'hello', roomId: this.opts.roomId };
       if (this.opts.hostToken) hello.token = this.opts.hostToken;
+      if (this.opts.clientId) hello.cid = this.opts.clientId;
       this.rawSend(hello);
+      // 重連 = server 當你係新 peer，冇你嘅 last fix；定位靜止就唔會有新 fix → 對方永遠睇唔到你。即刻補送。
+      if (this.lastFixSrc) void this.sendFix(this.lastFixSrc);
       this.startPing();
       this.opts.handlers?.onOpen?.();
     };
@@ -237,6 +245,7 @@ export class LiveClient {
 
   /** 加密並送一個 fix。回 false = 未連上 / 加密失敗（呼叫方可略過） */
   async sendFix(f: { lat: number; lng: number; accuracy: number; speed?: number; heading?: number }): Promise<boolean> {
+    this.lastFixSrc = f;
     if (!this.key || this.ws?.readyState !== WebSocket.OPEN) return false;
     const payload: LivePayload = { seq: ++this.seq, lat: f.lat, lng: f.lng, accuracy: f.accuracy, ts: Date.now() };
     if (f.speed !== undefined) payload.speed = f.speed;
@@ -264,6 +273,8 @@ export class LiveClient {
 
   setPaused(paused: boolean): void {
     this.rawSend({ type: paused ? 'paused' : 'resume' });
+    // 返前景：連線可能喺背景被系統斷咗又重連過，補送最新位置
+    if (!paused && this.lastFixSrc) void this.sendFix(this.lastFixSrc);
   }
 
   kick(peerId: string): void {
@@ -297,13 +308,16 @@ export class LiveClient {
 
   private startPing(): void {
     this.stopPing();
-    // 每 5 s 送 ping 做心跳（§5.2：>10 s 冇訊息 server 當 lost）。
-    // 啱啱先送過 fix 就跳過：fix 已經算心跳，而且 server 限每 peer 2 條 / s。
+    // 每 4 s 一個 tick（§5.2：>10 s 冇訊息 server 當 lost）：單數 tick 送 ping 量延遲，
+    // 雙數 tick 重送最新位置（定位靜止時瀏覽器唔會有新 fix，但對方仍然要見到「你喺度」）。
+    // 啱啱送過訊息就跳過：server 限每 peer 2 條 / s。
     this.pingTimer = setInterval(() => {
       if (Date.now() - this.lastMsgAt < 1000) return;
+      this.tick += 1;
+      if (this.tick % 2 === 0 && this.lastFixSrc) { void this.sendFix(this.lastFixSrc); return; }
       this.pingSentAt = Date.now();
       this.rawSend({ type: 'ping' });
-    }, 5000);
+    }, 4000);
   }
 
   private stopPing(): void {

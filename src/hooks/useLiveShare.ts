@@ -41,10 +41,18 @@ interface StoredSession {
   roomId: string;
   key: string;
   hostToken?: string;
+  /** 連線身份：reload / 重連都用同一個，server 先識得頂替舊連線 */
+  cid?: string;
   role: LiveRole;
   expiresAt: number;
   /** 打開 link 但未撳同意：reload 後要再問，唔可以自動連線 */
   pending?: boolean;
+}
+
+function newClientId(): string {
+  const a = new Uint8Array(12);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
 }
 
 function readSession(): StoredSession | null {
@@ -138,7 +146,8 @@ export function useLiveShare(fix: Fix | null): LiveShareState {
   }, []);
 
   /** 建立 client 並連線（host / guest 共用） */
-  const connect = useCallback((s: StoredSession, joinLink: string | null) => {
+  const connect = useCallback((s0: StoredSession, joinLink: string | null) => {
+    const s: StoredSession = { ...s0, cid: s0.cid ?? newClientId() };
     client.current?.close();
     writeSession(s);
     setRole(s.role);
@@ -156,6 +165,7 @@ export function useLiveShare(fix: Fix | null): LiveShareState {
       roomId: s.roomId,
       key: s.key,
       hostToken: s.hostToken,
+      clientId: s.cid,
       apiBase: LIVE_API,
       handlers: {
         onOpen: () => { if (statusRef.current === 'connecting') setStatus('live'); },
