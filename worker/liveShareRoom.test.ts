@@ -266,3 +266,27 @@ describe('same-client reconnect', () => {
     void guest;
   });
 });
+
+describe('ghost peers', () => {
+  it('tells the other peer when the server drops someone (rate limit / bad message), so no ghost "對方" is left behind', async () => {
+    const { roomId, hostToken } = await createRoom();
+    const host = await connect(roomId, hostToken);
+    const guest = await connect(roomId);
+    const guestId = host.messages.filter(m => m.type === 'peer' && m.state === 'joined').pop().id;
+    // 濫用：一秒內大量訊息 → server 斷線
+    for (let i = 0; i < 12; i++) guest.ws.send(JSON.stringify({ type: 'ping' }));
+    await wait(100);
+    expect(host.messages.some(m => m.type === 'peer' && m.id === guestId && m.state === 'left')).toBe(true);
+    expect(host.messages.filter(m => m.type === 'peers').pop().count).toBe(1);
+  });
+
+  it('allows a normal burst (resume-style fix + ping + fix within a second) without disconnecting', async () => {
+    const { roomId, hostToken } = await createRoom();
+    const host = await connect(roomId, hostToken);
+    const guest = await connect(roomId);
+    for (let i = 0; i < 3; i++) guest.ws.send(JSON.stringify({ type: 'fix', iv: 'aaaaaaaaaaaa', ct: 'bbbb' }));
+    await wait(100);
+    expect(host.messages.some(m => m.type === 'peer' && m.state === 'left')).toBe(false);
+    void host;
+  });
+});

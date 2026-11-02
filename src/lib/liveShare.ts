@@ -272,9 +272,10 @@ export class LiveClient {
   }
 
   setPaused(paused: boolean): void {
+    // 返前景：fix 本身就令 server 將你標返做 live，所以有位置就只送 fix（一條訊息，冇 resume + fix 連環兩條）；
+    // 連線可能喺背景被系統斷咗又重連過，補送最新位置亦係為咗呢個
+    if (!paused && this.lastFixSrc) { void this.sendFix(this.lastFixSrc); return; }
     this.rawSend({ type: paused ? 'paused' : 'resume' });
-    // 返前景：連線可能喺背景被系統斷咗又重連過，補送最新位置
-    if (!paused && this.lastFixSrc) void this.sendFix(this.lastFixSrc);
   }
 
   kick(peerId: string): void {

@@ -40,7 +40,8 @@ interface RoomMeta {
 
 const MAX_PEERS = 2;
 const MAX_MSG_BYTES = 512;
-const MAX_MSG_PER_SEC = 2;
+// 正常：fix ~1/s + 心跳 + 返前景補送。留餘量，避免正常使用被斷線；只擋濫用
+const MAX_MSG_PER_SEC = 5;
 const LOST_AFTER_MS = 10_000;
 const HEARTBEAT_SWEEP_MS = 10_000;
 /** 全部 peer 斷線超過呢段時間 → 關房 */
@@ -175,9 +176,8 @@ export class LiveShareRoom {
     if (cid) {
       for (const [other, st] of this.peers) {
         if (other !== ws && st.cid === cid) {
-          this.peers.delete(other);
+          this.dropPeer(other);
           try { other.close(1000, 'replaced'); } catch { /* already closed */ }
-          this.broadcast({ type: 'peer', id: st.id, state: 'left' });
         }
       }
     }
@@ -254,10 +254,8 @@ export class LiveShareRoom {
           await this.ctx.storage.put('meta', meta);
         }
         this.send(other, { type: 'ended', reason: 'kicked' });
-        this.peers.delete(other);
+        this.dropPeer(other);
         other.close(1000, 'kicked');
-        this.broadcast({ type: 'peer', id: targetId, state: 'left' });
-        this.broadcastPeersCount();
         return;
       }
     }
@@ -265,19 +263,12 @@ export class LiveShareRoom {
 
   webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): void {
     void code; void reason; void wasClean;
-    const peer = this.peers.get(ws);
-    if (peer) {
-      this.peers.delete(ws);
-      this.broadcast({ type: 'peer', id: peer.id, state: 'left' });
-      this.broadcastPeersCount();
-    }
-    if (this.peers.size === 0) this.emptySince = Date.now();
+    this.dropPeer(ws);
   }
 
   webSocketError(ws: WebSocket, error: unknown): void {
     void error;
-    this.peers.delete(ws);
-    if (this.peers.size === 0) this.emptySince = Date.now();
+    this.dropPeer(ws);
   }
 
   /* ---------------- Alarm：TTL + 心跳 sweep ---------------- */
@@ -288,6 +279,11 @@ export class LiveShareRoom {
 
     // TTL 到期 → 關房
     if (meta && now >= meta.expiresAt) return this.endRoom('ttl');
+
+    // 連線已經唔係 OPEN（半死 / 已關）→ 移走，唔好留幽靈 peer 佔位
+    for (const ws of [...this.peers.keys()]) {
+      if (ws.readyState !== WebSocket.OPEN) this.dropPeer(ws);
+    }
 
     // 心跳 sweep：>LOST_AFTER_MS 冇訊息 → 標記 lost
     for (const [ws, peer] of this.peers) {
@@ -338,8 +334,20 @@ export class LiveShareRoom {
   }
 
   private close(ws: WebSocket, code: number, reason: string): void {
-    this.peers.delete(ws);
+    this.dropPeer(ws);
     try { ws.close(code, reason); } catch { /* already closing */ }
+  }
+
+  /**
+   * 移走一個 peer，並通知其他人「佢走咗」。所有移除路徑（正常關、錯誤、被 server 因頻率 / 格式斷線、頂替、被踢）
+   * 都要經呢度；之前 webSocketError / close() 靜靜雞刪走，對方清單就永遠留住幽靈 peer。
+   */
+  private dropPeer(ws: WebSocket): void {
+    const peer = this.peers.get(ws);
+    if (!peer) return;
+    this.peers.delete(ws);
+    this.broadcast({ type: 'peer', id: peer.id, state: 'left' });
+    this.broadcastPeersCount();
     if (this.peers.size === 0) this.emptySince = Date.now();
   }
 }
