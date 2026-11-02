@@ -83,3 +83,38 @@ describe('createRoom', () => {
     await expect(createRoom('https://worker.example')).rejects.toThrow(/429/);
   });
 });
+
+describe('LiveClient resends the last fix', () => {
+  class FakeWS {
+    static OPEN = 1; static CONNECTING = 0; static CLOSING = 2; static CLOSED = 3;
+    static all: FakeWS[] = [];
+    readyState = 0; sent: any[] = [];
+    onopen: (() => void) | null = null; onclose: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null; onerror: (() => void) | null = null;
+    constructor(public url: string, public protocols: string[]) { FakeWS.all.push(this); }
+    send(s: string) { this.sent.push(JSON.parse(s)); }
+    close() { this.readyState = 3; this.onclose?.(); }
+    open() { this.readyState = 1; this.onopen?.(); }
+  }
+
+  it('re-sends the latest position after a reconnect, even if the GPS fix never changes', async () => {
+    FakeWS.all = [];
+    vi.stubGlobal('WebSocket', FakeWS);
+    const { LiveClient } = await import('./liveShare');
+    const { generateKey, exportKey } = await import('./liveCrypto');
+    const key = await exportKey(await generateKey());
+    const c = new LiveClient({ roomId: 'room-1', key, hostToken: 't', apiBase: 'https://x.example' });
+    await c.connect();
+    FakeWS.all[0].open();
+    await c.sendFix({ lat: 22.3, lng: 114.1, accuracy: 10 });
+    expect(FakeWS.all[0].sent.filter(m => m.type === 'fix')).toHaveLength(1);
+
+    // 連線被系統斷咗（例如切去 WhatsApp）→ 退避後重連
+    FakeWS.all[0].close();
+    await vi.waitFor(() => expect(FakeWS.all).toHaveLength(2), { timeout: 3000, interval: 50 });
+    FakeWS.all[1].open();
+    await vi.waitFor(() => expect(FakeWS.all[1].sent.some(m => m.type === 'fix')).toBe(true), { timeout: 2000, interval: 20 });
+    expect(FakeWS.all[1].sent[0]).toMatchObject({ type: 'hello', roomId: 'room-1', token: 't' });
+    c.close();
+  });
+});

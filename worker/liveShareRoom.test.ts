@@ -231,3 +231,38 @@ describe('review fixes', () => {
     void guest;
   });
 });
+
+describe('peer list correctness', () => {
+  it('does not echo a peer its own id (otherwise the other side lists "me" as 對方)', async () => {
+    const { roomId, hostToken } = await createRoom();
+    const host = await connect(roomId, hostToken);
+    const guest = await connect(roomId);
+    host.ws.send(JSON.stringify({ type: 'fix', iv: 'aaaaaaaaaaaa', ct: 'bbbb' }));
+    guest.ws.send(JSON.stringify({ type: 'fix', iv: 'cccccccccccc', ct: 'dddd' }));
+    await wait(80);
+    const ids = (m: any[]) => new Set(m.filter(x => x.type === 'peer').map(x => x.id));
+    expect(ids(host.messages).size).toBe(1);
+    expect(ids(guest.messages).size).toBe(1);
+    expect([...ids(host.messages)][0]).not.toBe([...ids(guest.messages)][0]);
+  });
+});
+
+describe('same-client reconnect', () => {
+  it('lets a client with the same cid replace its stale socket instead of being rejected as a third peer', async () => {
+    const { roomId, hostToken } = await createRoom();
+    const helloWith = async (cid: string, token?: string) => {
+      const s = await openSocket(roomId);
+      s.ws.send(JSON.stringify({ type: 'hello', roomId, cid, ...(token ? { token } : {}) }));
+      await wait(40);
+      return s;
+    };
+    const host = await helloWith('hostclient', hostToken);
+    const guest = await helloWith('guestclient');
+    // guest 條舊 socket 半死（冇 close），佢重連：應該頂替而唔係 'full'
+    const guest2 = await helloWith('guestclient');
+    expect(guest2.messages.some(m => m.type === 'ended')).toBe(false);
+    expect(host.messages.some(m => m.type === 'peer' && m.state === 'left')).toBe(true);
+    expect(guest2.messages.some(m => m.type === 'peers' && m.count === 2)).toBe(true);
+    void guest;
+  });
+});
