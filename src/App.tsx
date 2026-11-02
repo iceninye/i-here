@@ -96,19 +96,28 @@ export default function App() {
         )}
         {moreOpen && (
           <div id="more-tools">
-            <div className="tools">
+            <div className={`tools tools--icons${showLiveStart ? ' tools--4' : ''}`}>
               {!viewingShared && (
-                <button type="button" className="tool-btn" onClick={loc.refresh} disabled={loc.status === 'locating'}>
-                  <Icon name="refresh" /> 更新
+                <button
+                  type="button" className="tool-btn tool-btn--icon" onClick={loc.refresh} disabled={loc.status === 'locating'}
+                  aria-label="更新位置" title="更新位置"
+                >
+                  <Icon name="refresh" />
                 </button>
               )}
-              <button type="button" className="tool-btn" onClick={() => setIs3D(v => !v)} aria-pressed={is3D}>
-                <Icon name={is3D ? 'layers' : 'cube'} /> {is3D ? '平面' : '立體'}
+              <button
+                type="button" className="tool-btn tool-btn--icon" onClick={() => setIs3D(v => !v)} aria-pressed={is3D}
+                aria-label={is3D ? '轉回平面地圖' : '立體地圖'} title={is3D ? '平面地圖' : '立體地圖'}
+              >
+                <Icon name={is3D ? 'layers' : 'cube'} />
               </button>
               {/* 唔支援 Wake Lock 就唔顯示呢個掣（撳咗都冇用，得返個「可能會自動熄屏」提示） */}
               {showKeepAwake && (
-                <button type="button" className="tool-btn" onClick={() => setKeepAwake(v => !v)} aria-pressed={keepAwake}>
-                  <Icon name="sun" /> 常亮
+                <button
+                  type="button" className="tool-btn tool-btn--icon" onClick={() => setKeepAwake(v => !v)} aria-pressed={keepAwake}
+                  aria-label="保持螢幕常亮" title="螢幕常亮"
+                >
+                  <Icon name="sun" />
                 </button>
               )}
               {/* Worker 未設定（VITE_LIVE_API 空）就完全唔顯示入口；分享中由頂部 banner 負責停止 */}

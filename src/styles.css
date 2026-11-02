@@ -129,6 +129,14 @@ body { background: var(--bg); overscroll-behavior: none; }
   box-shadow: var(--shadow); cursor: pointer; touch-action: manipulation;
 }
 .fab .icon { font-size: 1.5rem; }
+.compass { width: 34px; height: 34px; transition: transform 0.1s linear; }
+.compass__n { font: 800 9px system-ui, sans-serif; fill: var(--ink); }
+.compass__north { fill: #d93025; }
+.compass__south { fill: var(--ink-3); opacity: 0.55; }
+/* 對方名牌喺圓點下面（「我」喺上面） */
+.pin--below { flex-direction: column-reverse; }
+.pin--below .pin__dot { margin-top: 0; margin-bottom: 4px; }
+.pin--below .pin__arrow { bottom: auto; top: 11px; margin: -32px 0 0 -32px; }
 
 /* 「我」標記：大、有字，唔使識睇藍點都知 */
 .pin { display: flex; flex-direction: column; align-items: center; pointer-events: none; }
@@ -246,6 +254,9 @@ body { background: var(--bg); overscroll-behavior: none; }
   font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
 }
 .tool-btn .icon { font-size: 1.1rem; }
+.tools--icons { grid-template-columns: repeat(3, 1fr); }
+.tools--icons.tools--4 { grid-template-columns: 1fr 1fr 1fr 2.4fr; }
+.tool-btn--icon .icon { font-size: 1.5rem; }
 .more-toggle {
   display: flex; align-items: center; justify-content: center; gap: 4px; margin: 0 auto; min-height: 28px; line-height: 1.1; padding: 0 16px;
   border: none; background: none; font: inherit; font-size: var(--text-sm); font-weight: 700; color: var(--ink-2); cursor: pointer; touch-action: manipulation;
