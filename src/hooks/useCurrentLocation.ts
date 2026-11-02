@@ -147,6 +147,10 @@ export function useCurrentLocation({ enabled = true }: { enabled?: boolean } = {
           const f = toFix(pos);
           const prev = lastFix.current;
           if (!f) return;
+          // 收到任何 fix 都代表 GPS 仲有訊號：就算下面因為「冇郁」而唔更新畫面，都要刷新心跳，
+          // 否則企定嘅人 10 秒後會被誤報「訊號丟失」（真機：精度 ±9 m 都顯示丟失、marker 變灰）
+          lastFixTs.current = Date.now();
+          setSignalLost(false);
           logFix(f);
           const moved = prev ? haversineM(prev.lat, prev.lng, f.lat, f.lng) : Infinity;
           const better = prev ? f.accuracy < prev.accuracy * 0.7 : true;
