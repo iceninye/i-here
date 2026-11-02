@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type GeoJSONSource, type Map as MlMap, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BUILDINGS_3D, LANDSD_3DTILES_URL, LANDSD_TILES } from '../config';
-import { circlePolygon, type Fix } from '../lib/geo';
+import { circlePolygon, haversineM, type Fix } from '../lib/geo';
 import { extrapolateFix } from '../lib/interpolate';
 import type { MotionState } from '../lib/motion';
 import type { PeerState } from '../lib/liveShare';
@@ -38,6 +38,8 @@ const STYLE: StyleSpecification = {
     label: { type: 'raster', tiles: [LANDSD_TILES.labelTc], tileSize: 256, maxzoom: 20 },
     accuracy: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     'peer-accuracy': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+    // 我同對方之間嘅連線（一撥就睇到對方喺邊）
+    'peer-link': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
   },
   layers: [
     { id: 'bg', type: 'background', paint: { 'background-color': '#eef2f4' } },
@@ -48,11 +50,21 @@ const STYLE: StyleSpecification = {
     // 對方嘅精度圈用另一個色（§5.3：己方藍、對方另一色），先畫喺自己嗰層下面
     { id: 'peer-accuracy-fill', type: 'fill', source: 'peer-accuracy', paint: { 'fill-color': '#e8710a', 'fill-opacity': 0.12 } },
     { id: 'peer-accuracy-line', type: 'line', source: 'peer-accuracy', paint: { 'line-color': '#e8710a', 'line-width': 2, 'line-opacity': 0.5 } },
+    { id: 'peer-link-line', type: 'line', source: 'peer-link', paint: { 'line-color': '#e8710a', 'line-width': 3, 'line-opacity': 0.85, 'line-dasharray': [2, 2] } },
   ],
 };
 
 /** 標記底部係圓點（22px），向下移半粒，令圓點中心 = 實際座標 = 精度圈中心 */
 const DOT_OFFSET: [number, number] = [0, 11];
+
+/** 對方距離字：「對方 · 約 85 米」 */
+function peerLabel(meFix: Fix | null, peerFix: Fix): string {
+  if (!meFix) return '對方';
+  const m = haversineM(meFix.lat, meFix.lng, peerFix.lat, peerFix.lng);
+  if (m < 15) return '對方 · 好近';
+  if (m < 1000) return `對方 · 約 ${Math.round(m / 5) * 5} 米`;
+  return `對方 · 約 ${(m / 1000).toFixed(1)} 公里`;
+}
 
 function markerEl(text: string, cls: string): HTMLElement {
   const el = document.createElement('div');
@@ -225,10 +237,13 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       seen.add(p.id);
       let marker = peerMarkers.current.get(p.id);
       if (!marker) {
-        marker = new maplibregl.Marker({ element: markerEl('對方', 'pin--peer'), anchor: 'bottom', offset: DOT_OFFSET });
+        // 對方嘅名牌放喺圓點下面（「我」放上面）：兩個人好近嗰陣名牌唔會疊埋一齊
+        marker = new maplibregl.Marker({ element: markerEl('對方', 'pin--peer pin--below'), anchor: 'top', offset: [0, -11] });
         peerMarkers.current.set(p.id, marker);
       }
       marker.setLngLat([p.fix.lng, p.fix.lat]).addTo(map);
+      const labelEl = marker.getElement().querySelector('.pin__label');
+      if (labelEl) labelEl.textContent = peerLabel(fix, p.fix);
       // 對方暫停 / 訊號丟失：變灰 + 停止外推（保留最後已知位置）
       const stale = p.state === 'lost' || p.state === 'paused';
       marker.getElement().classList.toggle('pin--lost', stale);
@@ -249,7 +264,22 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       type: 'FeatureCollection',
       features: circles.map(ring => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } })),
     });
-  }, [livePeers, loaded]);
+    // 連線：我 ↔ 對方
+    const other = peers.find(p => p.fix);
+    (map.getSource('peer-link') as GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: fix && other?.fix
+        ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[fix.lng, fix.lat], [other.fix.lng, other.fix.lat]] } }]
+        : [],
+    });
+    // 對方第一次有位置：自動拉到兩個人都見到（之後唔再搶鏡頭，用戶可以撳右下角掣再睇）
+    if (other?.fix && fix) {
+      if (!autoFitted.current) { autoFitted.current = true; fitBoth(); }
+    } else {
+      autoFitted.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livePeers, loaded, fix]);
 
   // 收件人模式 pin
   useEffect(() => {
@@ -303,6 +333,19 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
     return () => { map.off('idle', highlight); };
   }, [fix, is3D, loaded]);
 
+  const autoFitted = useRef(false);
+  const fitBoth = () => {
+    const map = mapRef.current;
+    const other = livePeers?.find(p => p.fix)?.fix;
+    if (!map || !fix || !other) return;
+    setFollowing(false);
+    const b = new maplibregl.LngLatBounds([fix.lng, fix.lat], [fix.lng, fix.lat]).extend([other.lng, other.lat]);
+    // 避開頂部卡（含實時分享 banner）同底欄：兩個人都要喺中間空位入面
+    const top = (document.querySelector('.top')?.getBoundingClientRect().bottom ?? 160) + 50;
+    const bottom = (document.querySelector('.bottom')?.getBoundingClientRect().height ?? 140) + 60;
+    map.fitBounds(b, { padding: { top, bottom, left: 110, right: 110 }, maxZoom: 18, duration: 700 });
+  };
+
   const resetNorth = () => { mapRef.current?.easeTo({ bearing: 0, duration: 500 }); };
 
   const recenter = () => {
@@ -317,7 +360,12 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       <div className="map-fabs">
         {bearing !== 0 && (
           <button type="button" className="fab" onClick={resetNorth} aria-label="指北針：撳一下將地圖轉返向北" title="轉返向北">
-            <span style={{ display: 'inline-flex', transform: `rotate(${-bearing}deg)` }}><Icon name="compass" /></span>
+            <CompassIcon bearing={bearing} />
+          </button>
+        )}
+        {livePeers?.some(p => p.fix) && fix && (
+          <button type="button" className="fab" onClick={fitBoth} aria-label="同時睇我同對方" title="同時睇我同對方">
+            <Icon name="people" />
           </button>
         )}
         {!following && fix && (
@@ -327,6 +375,17 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
         )}
       </div>
     </div>
+  );
+}
+
+/** 指北針：「N」同紅色尖端永遠指向正北（地圖轉幾多度就反方向轉返幾多度） */
+function CompassIcon({ bearing }: { bearing: number }) {
+  return (
+    <svg className="compass" viewBox="0 0 32 32" aria-hidden="true" style={{ transform: `rotate(${-bearing}deg)` }}>
+      <text x="16" y="9" textAnchor="middle" className="compass__n">N</text>
+      <path d="M16 11l4.2 9.5H11.8L16 11z" className="compass__north" />
+      <path d="M16 30l-4.2-9.5h8.4L16 30z" className="compass__south" />
+    </svg>
   );
 }
 
