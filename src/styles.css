@@ -134,7 +134,7 @@ body { background: var(--bg); overscroll-behavior: none; }
 .compass__north { fill: #d93025; }
 .compass__south { fill: var(--ink-3); opacity: 0.55; }
 /* 對方名牌喺圓點下面（「我」喺上面） */
-.pin--below { flex-direction: column-reverse; }
+.pin.pin--below { flex-direction: column-reverse; }
 .pin--below .pin__dot { margin-top: 0; margin-bottom: 4px; }
 .pin--below .pin__arrow { bottom: auto; top: 11px; margin: -32px 0 0 -32px; }
 
@@ -147,7 +147,8 @@ body { background: var(--bg); overscroll-behavior: none; }
 .pin__dot { width: 22px; height: 22px; margin-top: 4px; border-radius: 50%; border: 4px solid #fff; box-shadow: 0 0 0 0 currentColor; }
 /* heading 箭咀（§4.4）：64px 盒嘅中心對正圓點中心（圓點中心 = 元素底邊以上 11px），
    所以旋轉係繞住實際座標轉。冇 heading / 靜止 / 訊號丟失時隱藏（未知 ≠ 向北）。 */
-.pin { position: relative; }
+/* 注意：唔好喺 .pin 加 position:relative —— 會蓋過 maplibre 嘅 .maplibregl-marker{position:absolute}，
+   令第二個 marker 起被當成一般排版逐個疊落去（對方 marker 偏離真實座標 / 疊成一柱）。箭咀嘅絕對定位以 marker 本身為基準即可。 */
 .pin__arrow {
   position: absolute; left: 50%; bottom: 11px; width: 64px; height: 64px; margin: 0 0 -32px -32px;
   transform: rotate(calc((var(--h, 0) - var(--b, 0)) * 1deg));
@@ -359,3 +360,20 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 4px soli
 
 /* ---- 版本字 ---- */
 .version { margin: 4px 0 0; text-align: center; font-size: 0.7rem; line-height: 1.2; color: var(--ink-3); user-select: all; }
+
+/* ---- 實時分享期間：頂部壓縮成兩行（騰出地圖） ---- */
+.live--compact { padding: 6px 10px; margin-bottom: 6px; }
+.live--compact .live__row { gap: 6px; flex-wrap: nowrap; }
+.live__who { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
+.live__toggle { flex: none; width: 36px; height: 36px; border: none; background: none; font: inherit; font-size: 1rem; color: var(--ink-2); cursor: pointer; }
+.live--compact .live__btn--stop { min-height: 36px; padding: 0 10px; font-size: var(--text-sm); }
+.live__more { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.live__more .live__note { margin: 2px 0; font-size: var(--text-xs); }
+.live__more .live__invite { margin-top: 4px; padding-top: 0; border-top: none; }
+.live__more .live__btn { min-height: 40px; }
+.card--compact { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; }
+.card__ctitle { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.15rem; font-weight: 800; }
+.card--compact .badge { flex: none; margin: 0 !important; }
+.card__lost { flex: none; color: var(--warn-ink); }
+.card__toggle { flex: none; width: 36px; height: 36px; border: none; background: none; font: inherit; font-size: 1rem; color: var(--ink-2); cursor: pointer; }
+.card__toggle--abs { position: sticky; float: right; top: 0; }

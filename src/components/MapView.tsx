@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type GeoJSONSource, type Map as MlMap, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BUILDINGS_3D, LANDSD_3DTILES_URL, LANDSD_TILES } from '../config';
-import { circlePolygon, haversineM, type Fix } from '../lib/geo';
+import { circlePolygon, formatDistance, haversineM, type Fix } from '../lib/geo';
 import { extrapolateFix } from '../lib/interpolate';
 import type { MotionState } from '../lib/motion';
 import type { PeerState } from '../lib/liveShare';
@@ -57,13 +57,10 @@ const STYLE: StyleSpecification = {
 /** 標記底部係圓點（22px），向下移半粒，令圓點中心 = 實際座標 = 精度圈中心 */
 const DOT_OFFSET: [number, number] = [0, 11];
 
-/** 對方距離字：「對方 · 約 85 米」 */
+/** 對方名牌：「對方 · 約 85 米」 */
 function peerLabel(meFix: Fix | null, peerFix: Fix): string {
   if (!meFix) return '對方';
-  const m = haversineM(meFix.lat, meFix.lng, peerFix.lat, peerFix.lng);
-  if (m < 15) return '對方 · 好近';
-  if (m < 1000) return `對方 · 約 ${Math.round(m / 5) * 5} 米`;
-  return `對方 · 約 ${(m / 1000).toFixed(1)} 公里`;
+  return `對方 · ${formatDistance(haversineM(meFix.lat, meFix.lng, peerFix.lat, peerFix.lng))}`;
 }
 
 function markerEl(text: string, cls: string): HTMLElement {
@@ -341,8 +338,9 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
     setFollowing(false);
     const b = new maplibregl.LngLatBounds([fix.lng, fix.lat], [fix.lng, fix.lat]).extend([other.lng, other.lat]);
     // 避開頂部卡（含實時分享 banner）同底欄：兩個人都要喺中間空位入面
-    const top = (document.querySelector('.top')?.getBoundingClientRect().bottom ?? 160) + 50;
-    const bottom = (document.querySelector('.bottom')?.getBoundingClientRect().height ?? 140) + 60;
+    // 「我」名牌喺圓點上面、「對方」名牌喺圓點下面，所以上下都要多留一個名牌嘅高度
+    const top = (document.querySelector('.top')?.getBoundingClientRect().bottom ?? 160) + 70;
+    const bottom = (document.querySelector('.bottom')?.getBoundingClientRect().height ?? 140) + 90;
     map.fitBounds(b, { padding: { top, bottom, left: 110, right: 110 }, maxZoom: 18, duration: 700 });
   };
 

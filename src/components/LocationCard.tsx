@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CurrentLocation } from '../hooks/useCurrentLocation';
 import type { NearbyCategory } from '../lib/reverseGeocode';
 import { placeHeadline } from '../lib/shareText';
@@ -8,13 +9,13 @@ const CAT_LABEL: Record<NearbyCategory, string> = {
   toilet: '公廁', postal: '郵政', attraction: '景點', other: '其他',
 };
 
-function accuracyLabel(acc: number): { text: string; level: 'good' | 'ok' | 'poor' } {
-  if (!Number.isFinite(acc)) return { text: '準確度未知', level: 'poor' };
+function accuracyLabel(acc: number): { text: string; short: string; level: 'good' | 'ok' | 'poor' } {
+  if (!Number.isFinite(acc)) return { text: '準確度未知', short: '未知', level: 'poor' };
   const m = Math.round(acc);
   // 實測：第一個 fix 話 ±24 m，真實誤差 ~26 m；約 17 秒後先收窄到 ±3 m。所以 ±15 m 以上唔好叫「很準確」
-  if (acc <= 15) return { text: `很準確（約 ${m} 米內）`, level: 'good' };
-  if (acc <= 60) return { text: `大致準確（約 ${m} 米內）`, level: 'ok' };
-  return { text: `不太準確（約 ${m} 米）`, level: 'poor' };
+  if (acc <= 15) return { text: `很準確（約 ${m} 米內）`, short: `約 ${m} 米`, level: 'good' };
+  if (acc <= 60) return { text: `大致準確（約 ${m} 米內）`, short: `約 ${m} 米`, level: 'ok' };
+  return { text: `不太準確（約 ${m} 米）`, short: `約 ${m} 米`, level: 'poor' };
 }
 
 const ERROR_TEXT: Record<string, string> = {
@@ -36,14 +37,35 @@ function announcement(loc: CurrentLocation, headline: string | null): string {
 }
 
 /** 頂部大字卡：「你現在位於：興輝樓附近」。 */
-export function LocationCard({ loc }: { loc: CurrentLocation }) {
+export function LocationCard({ loc, compact = false }: { loc: CurrentLocation; compact?: boolean }) {
   const { fix, place, placeStatus, error, status } = loc;
+  // 實時分享期間預設收窄成一行（騰出地圖空間），撳 ▾ 先展開地址同附近資訊
+  const [open, setOpen] = useState(false);
   const headline = placeHeadline(place);
   const acc = fix ? accuracyLabel(fix.accuracy) : null;
+
+  if (compact && !open && fix && headline) {
+    return (
+      <section className="card card--compact" aria-label="你的位置">
+        <p className="sr-only" role="status" aria-live="polite">{announcement(loc, headline)}</p>
+        <p className="card__ctitle">{headline}</p>
+        {acc && (
+          <p className={`badge badge--${acc.level}`}>
+            <Icon name={acc.level === 'poor' ? 'alert' : 'signal'} /> {acc.short}
+          </p>
+        )}
+        {loc.signalLost && <Icon name="alert" className="card__lost" />}
+        <button type="button" className="card__toggle" onClick={() => setOpen(true)} aria-expanded={false} aria-label="展開地址同附近資訊">▾</button>
+      </section>
+    );
+  }
 
   return (
     <section className="card" aria-label="你的位置">
       <p className="sr-only" role="status" aria-live="polite">{announcement(loc, headline)}</p>
+      {compact && open && (
+        <button type="button" className="card__toggle card__toggle--abs" onClick={() => setOpen(false)} aria-expanded aria-label="收埋">▴</button>
+      )}
       {!fix && status !== 'error' && (
         <>
           <p className="card__eyebrow">請稍等幾秒</p>

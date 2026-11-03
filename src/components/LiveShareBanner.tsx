@@ -36,8 +36,10 @@ export function formatRemaining(ms: number): string {
 /**
  * @param keepAwake Screen Wake Lock 支援同申請成功（§4.5）；false 就提一句「螢幕可能會自動關閉」
  */
-export function LiveShareBanner({ live, keepAwake = false }: { live: LiveShareState; keepAwake?: boolean }): ReactElement | null {
+export function LiveShareBanner({ live, keepAwake = false, distanceText = null }: { live: LiveShareState; keepAwake?: boolean; distanceText?: string | null }): ReactElement | null {
   const [copied, setCopied] = useState(false);
+  // 展開 = 邀請連結 / 踢走 / 提示。冇人加入時自動展開（要傳連結），對方上線後自動收窄成一行；用戶手動撳過就跟用戶
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const { status, role, link, peers, peerCount, remainingMs, endReason, error } = live;
 
   const shareLink = async () => {
@@ -78,55 +80,61 @@ export function LiveShareBanner({ live, keepAwake = false }: { live: LiveShareSt
 
   if (status !== 'live' && status !== 'connecting' && status !== 'starting') return null;
 
+  const other = peers[0];
+  const expanded = userOpen ?? (peerCount < 2);
+
   return (
-    <div className="live" role="status" aria-live="polite">
+    <div className="live live--compact" role="status" aria-live="polite">
       <div className="live__row">
         <Icon name="dot" className="icon--filled live__dot" />
-        <span className="live__title">正在分享實時位置</span>
-        <span className="live__ttl">剩 {formatRemaining(remainingMs)}</span>
-        <button type="button" className="live__btn live__btn--stop" onClick={live.stop}>
+        <span className="sr-only">正在分享實時位置</span>
+        {status !== 'live'
+          ? <span className="live__who">連線中…</span>
+          : other
+            ? (
+              <>
+                <span className={`live__state live__state--${other.state}`}>{PEER_LABEL[other.state]}</span>
+                <span className="live__who">對方{distanceText ? ` ${distanceText.replace('約 ', '')}` : ''}</span>
+              </>
+            )
+            : <span className="live__who">{role === 'host' ? '等對方加入…' : '等對方位置…'}</span>}
+        <span className="live__ttl">{formatRemaining(remainingMs)}</span>
+        <button
+          type="button" className="live__toggle" onClick={() => setUserOpen(!expanded)}
+          aria-expanded={expanded} aria-label={expanded ? '收埋詳情' : '展開詳情'}
+        >{expanded ? '▴' : '▾'}</button>
+        <button type="button" className="live__btn live__btn--stop" onClick={live.stop} aria-label="停止實時分享">
           <Icon name="square" /> 停止
         </button>
       </div>
 
-      {status !== 'live' && <p className="live__note">連線中…</p>}
-      {status === 'live' && !keepAwake && (
-        <p className="live__note">螢幕可能會自動關閉 —— 請保持呢個畫面開著，否則對方會睇唔到你。</p>
-      )}
-
-      {role === 'host' && link && (
-        <div className="live__invite">
-          <p className="live__note">
-            已加入 {peerCount} / 2 人{peerCount < 2 ? ' · 傳連結俾對方先睇到你' : ''}
-          </p>
-          <div className="live__invite-btns">
-            <button type="button" className="live__btn" onClick={shareLink}>
-              <Icon name="share" /> 傳邀請連結
+      {expanded && (
+        <div className="live__more">
+          {status === 'live' && !keepAwake && (
+            <p className="live__note">螢幕可能會自動關閉 —— 請保持呢個畫面開著，否則對方會睇唔到你。</p>
+          )}
+          {role === 'host' && link && (
+            <div className="live__invite">
+              <p className="live__note">
+                已加入 {peerCount} / 2 人{peerCount < 2 ? ' · 傳連結俾對方先睇到你' : ''}
+              </p>
+              <div className="live__invite-btns">
+                <button type="button" className="live__btn" onClick={shareLink}>
+                  <Icon name="share" /> 傳邀請連結
+                </button>
+                <button type="button" className="live__btn" onClick={copyLink}>
+                  <Icon name={copied ? 'check' : 'copy'} /> {copied ? '已複製' : '複製連結'}
+                </button>
+              </div>
+            </div>
+          )}
+          {role === 'host' && other && (
+            <button type="button" className="live__btn live__btn--ghost" onClick={() => live.kick(other.id)}>
+              踢走對方
             </button>
-            <button type="button" className="live__btn" onClick={copyLink}>
-              <Icon name={copied ? 'check' : 'copy'} /> {copied ? '已複製' : '複製連結'}
-            </button>
-          </div>
+          )}
         </div>
       )}
-
-      {peers.length === 0
-        ? <p className="live__note">{role === 'host' ? '等緊對方加入…' : '等緊對方位置…'}</p>
-        : (
-          <ul className="live__peers">
-            {peers.map(p => (
-              <li key={p.id} className="live__peer">
-                <span className={`live__state live__state--${p.state}`}>{PEER_LABEL[p.state]}</span>
-                <span className="live__peer-name">對方</span>
-                {role === 'host' && (
-                  <button type="button" className="live__btn live__btn--ghost" onClick={() => live.kick(p.id)}>
-                    踢走
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
     </div>
   );
 }
