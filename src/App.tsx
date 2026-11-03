@@ -10,6 +10,7 @@ import { ShareButton } from './components/ShareButton';
 import { useCurrentLocation } from './hooks/useCurrentLocation';
 import { useLiveShare } from './hooks/useLiveShare';
 import { useWakeLock } from './hooks/useWakeLock';
+import { formatDistance, haversineM } from './lib/geo';
 import { googleMapsUrl, parseSharedLocation } from './lib/shareText';
 
 export default function App() {
@@ -46,6 +47,8 @@ export default function App() {
     setViewingShared(false);
   };
 
+  const peerFix = live.peers.find(p => p.fix)?.fix ?? null;
+  const peerDistance = loc.fix && peerFix ? formatDistance(haversineM(loc.fix.lat, loc.fix.lng, peerFix.lat, peerFix.lng)) : null;
   const showLiveStart = !viewingShared && live.available && (live.status === 'idle' || live.status === 'ended' || live.status === 'error');
   const showKeepAwake = !viewingShared && wake.supported && live.status !== 'live';
 
@@ -61,7 +64,7 @@ export default function App() {
       />
 
       <header className="top">
-        <LiveShareBanner live={live} keepAwake={wake.active} />
+        <LiveShareBanner live={live} keepAwake={wake.active} distanceText={peerDistance} />
         {viewingShared && shared ? (
           <section className="card" aria-label="對方分享的位置">
             <p className="card__eyebrow">對方分享的位置</p>
@@ -71,7 +74,7 @@ export default function App() {
             </a>
           </section>
         ) : (
-          <LocationCard loc={loc} />
+          <LocationCard loc={loc} compact={live.status === 'live' || live.status === 'connecting'} />
         )}
         <InAppBanner />
         {debug && <DebugPanel loc={loc} live={live} />}

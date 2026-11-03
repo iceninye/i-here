@@ -127,6 +127,13 @@ export function acquireBestFix(opts: AcquireOptions = {}): Promise<Fix> {
 }
 
 /** 兩點距離（米） */
+/** 距離字：好近 / 約 105 米 / 約 7.4 公里（5 米為單位，避免數字跳來跳去） */
+export function formatDistance(m: number): string {
+  if (m < 15) return '好近';
+  if (m < 1000) return `約 ${Math.round(m / 5) * 5} 米`;
+  return `約 ${(m / 1000).toFixed(1)} 公里`;
+}
+
 export function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371008.8;
   const toRad = (d: number) => (d * Math.PI) / 180;
