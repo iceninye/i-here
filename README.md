@@ -183,7 +183,7 @@ wrangler.test.jsonc             測試專用設定（vitest workerd）
 - 第一個 fix：±23.8 m，**真實誤差約 26 m**（同畫面上嘅「±24 米」吻合，所以 ±15 m 以上唔再叫「很準確」）。
 - 約 17 秒後收窄到 ±3 m；之後靜止時抖動只有約 1–2 m（±2–5 m）。
 - 所以：**露天靜止時唔需要自己平均 / 平滑**，OS 融合已經夠好；關鍵係**精度變好之後要重新查地址**（以前要行夠 40 m 先重查，會一直停喺粗略位置嘅結果，標題變咗 79 m 外嘅屋苑）。
-- 錦上路站 A 出口（靜止約 66 秒）：第一個 fix 已經 ±4.1 m（OS 有暖機位置），之後 ±2.2–4.1 m；位置慢慢漂移約 2 m，抖動 < 1 m。同一部機喺 D 出口冷啟動（第一個 fix 差 26 m）對比，可見**差別在冷啟動**，唔在平滑。
+- 錦上路站 A 出口（靜止約 66 秒）：第一個 fix 已經 ±4.1 m（OS 有暖機位置），之後 ±2.2–4.1 m；66 秒內位置漂移約 4 m（之前寫「抖動 < 1 m」係錯，已更正）。同一部機喺 D 出口冷啟動（第一個 fix 差 26 m）對比，可見**差別在冷啟動**，唔在平滑。
 - 錦上路站 D 出口第二次（冷啟動，走近出口）：16.0 m → 10 m（4 s）→ 4.3 m（9 s）→ ≤3 m（約 25 s）；最初幾個 fix 實際離最終位置約 21 m（回報 ±16 m），所以仍然要「精度改善就重查」。
 - **試過「反變差加權融合」但已拎走**：用 D 出口冷啟動頭 9 個 fix 重播，融合後回報 ±2.9 m、實際差 8.2 m；最準單一 fix（±4.3 m）實際只差 1.9 m。原因：早期 fix 誤差同向（相關），八個中等 fix 嘅合共權重壓過一個好 fix，而且融合精度 1/√Σw 會細過任何單一 fix（過度自信）。喺三次實測紀錄上，第 1 個 fix 已 ≤30 m，取樣即刻結束，融合根本冇作用。現在輸出最準嗰個單一 fix（`src/lib/geo.test.ts` 用真實紀錄鎖住呢個行為）。
 - 未量度：街道峽谷（旺角）、室內、行路中。
@@ -193,7 +193,7 @@ wrangler.test.jsonc             測試專用設定（vitest workerd）
 - `identify` 嘅回應格式已用真實手機回應確認（`src/lib/__fixtures__/identify-*.json`：錦上路站、天水圍站、柏瓏、A 出口……部分節錄，天福路、宏達路完整）。`addressType`：ST 街道、S 屋苑、P 平台、B 建築物、F 設施。
 - `ALS` 嘅輸出語言由 `Accept-Language` 決定：以前冇傳，只回英文；傳 `en,zh-Hant` 之後每個結果都有 `ChiPremisesAddress`（`ChiDistrict.DcDistrict`、`ChiStreet.StreetName / BuildingNoFrom`、`ChiEstate.EstateName`、`ChiBlock.BlockDescriptor / BlockNo`、`BuildingName`），已用真實回應確認（`als-kam-sheung-road-d-access.json`，完整）。ALS 嘅文字配對可以配到另一個地方（D 出口 → 300 m 外嘅「港鐵錦田大樓」），所以只收離地方本身 60 m 內嘅。
 - 坐標轉換 API 已用真實回應確認（`transform-kam-sheung-road-a.json`）。
-- `searchNearby` 真實格式已確認（`searchnearby-kam-sheung-road-exit-d.json`，43 項中揀 16 項原文）：`[{ name, address, x, y, additionalInfoKey[], additionalInfoValue[] }]`。
+- `searchNearby` 真實格式已確認（`searchnearby-kam-sheung-road-exit-d.json`，由原始回應揀出 16 項原文）：`[{ name, address, x, y, additionalInfoKey[], additionalInfoValue[] }]`。
 - **診斷方法**：網址加 `?debug=1`，位置卡下面會出「診斷資料」（第一行 `build:` 係版本，手機有時會跑緊舊快取，貼紀錄時請連埋呢行）：每個 API 嘅狀態、耗時（等緊嘅都睇到）、原始回應，同埋原始定位紀錄 CSV（用嚟量度誤差）。
 - 輕量 3D 建築物用 OpenStreetMap 高度數據（OpenFreeMap 向量瓦片）：開立體圖時會向 OpenFreeMap 要圖磚，等於將畫面範圍告訴佢；之後會改用自己託管嘅資料。
 - 北區同深圳交界一帶，經緯度範圍檢查無可避免會重疊；嗰度 identify 搵唔到大廈就只顯示座標。

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import maplibregl, { type GeoJSONSource, type Map as MlMap, type StyleSpecification } from 'maplibre-gl';
+import { LngLatBounds, Map as MaplibreMap, Marker, setWorkerUrl, type ExpressionSpecification, type GeoJSONSource, type Map as MlMap, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+// MapLibre 6 會喺自己模組嘅隔籬搵 worker 檔（./maplibre-gl-worker.mjs）；經 Vite 打包之後個位置唔存在，
+// 要明確話佢知 worker 喺邊（Vite 會將呢個檔原封不動輸出成帶 hash 嘅資產）。冇呢句，GeoJSON 圖層（精度圈、連線）會畫唔到。
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { BUILDINGS_3D, LANDSD_3DTILES_URL, LANDSD_TILES } from '../config';
 import { circlePolygon, formatDistance, haversineM, type Fix } from '../lib/geo';
 import { extrapolateFix } from '../lib/interpolate';
@@ -27,6 +30,8 @@ interface Props {
   /** 實時分享中嘅對方（可以零個或者一個；房上限 2 人） */
   livePeers?: LivePeerView[];
 }
+
+setWorkerUrl(maplibreWorkerUrl);
 
 const HK_CENTER: [number, number] = [114.1694, 22.3193];
 const HK_BOUNDS: [[number, number], [number, number]] = [[113.75, 22.1], [114.5, 22.6]];
@@ -93,7 +98,7 @@ function setHeading(el: HTMLElement, fix: Fix, moving: boolean): void {
 export function MapView({ fix, is3D, motion = 'still', signalLost = false, sharedPin, livePeers }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
-  const meMarker = useRef<maplibregl.Marker | null>(null);
+  const meMarker = useRef<Marker | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [following, setFollowing] = useState(true);
   const [bearing, setBearing] = useState(0);
@@ -103,13 +108,13 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
   const latestFix = useRef<Fix | null>(null);
   const receivedAt = useRef<number>(0);
   // 對方 marker 同佢哋嘅插值狀態（§5.3：對方 marker 同一套插值）
-  const peerMarkers = useRef(new Map<string, maplibregl.Marker>());
+  const peerMarkers = useRef(new Map<string, Marker>());
   const peerTrack = useRef(new Map<string, { fix: Fix; at: number }>());
 
   // init
   useEffect(() => {
     if (!container.current) return;
-    const map = new maplibregl.Map({
+    const map = new MaplibreMap({
       container: container.current,
       style: STYLE,
       center: sharedPin ? [sharedPin.lng, sharedPin.lat] : HK_CENTER,
@@ -162,7 +167,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !fix) return;
-    if (!meMarker.current) meMarker.current = new maplibregl.Marker({ element: markerEl('我', 'pin--me'), anchor: 'bottom', offset: DOT_OFFSET });
+    if (!meMarker.current) meMarker.current = new Marker({ element: markerEl('我', 'pin--me'), anchor: 'bottom', offset: DOT_OFFSET });
     meMarker.current.setLngLat([fix.lng, fix.lat]).addTo(map);
     // 訊號丟失：pin 變灰（§4.6）
     meMarker.current.getElement().classList.toggle('pin--lost', signalLost);
@@ -191,7 +196,9 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
   //   - 只喺非 still、非訊號丟失、speed/heading 已知、accuracy ≤ 30 m 時外推，最多 1.5 s（extrapolateFix 內部限制）。
   //   - 新 fix 到達 → 上面嘅 effect 已經 setLngLat 到真位置（直接 snap，唔慢慢拖）。
   //   - extrapolateFix 回 null（條件未符）時唔郁 marker，保持 snap 咗嘅位置。
-  const peersMoving = !!livePeers?.some(p => p.state === 'live' && p.fix);
+  // 只有對方真係郁緊（有速度同方向）先開 rAF 外推 loop；企定嘅對方唔使每秒 60 次空轉，慳電
+  const peersMoving = !!livePeers?.some(p =>
+    p.state === 'live' && !!p.fix && (p.fix.speed ?? 0) > 0.5 && p.fix.heading !== undefined && Number.isFinite(p.fix.heading));
   useEffect(() => {
     if (!loaded) return;
     if (motion === 'still' && !peersMoving) return;
@@ -235,7 +242,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
       let marker = peerMarkers.current.get(p.id);
       if (!marker) {
         // 對方嘅名牌放喺圓點下面（「我」放上面）：兩個人好近嗰陣名牌唔會疊埋一齊
-        marker = new maplibregl.Marker({ element: markerEl('對方', 'pin--peer pin--below'), anchor: 'top', offset: [0, -11] });
+        marker = new Marker({ element: markerEl('對方', 'pin--peer pin--below'), anchor: 'top', offset: [0, -11] });
         peerMarkers.current.set(p.id, marker);
       }
       marker.setLngLat([p.fix.lng, p.fix.lat]).addTo(map);
@@ -282,7 +289,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !sharedPin) return;
-    const m = new maplibregl.Marker({ element: markerEl(sharedPin.label ? '對方' : '位置', 'pin--shared'), anchor: 'bottom', offset: DOT_OFFSET })
+    const m = new Marker({ element: markerEl(sharedPin.label ? '對方' : '位置', 'pin--shared'), anchor: 'bottom', offset: DOT_OFFSET })
       .setLngLat([sharedPin.lng, sharedPin.lat])
       .addTo(map);
     return () => { m.remove(); };
@@ -336,7 +343,7 @@ export function MapView({ fix, is3D, motion = 'still', signalLost = false, share
     const other = livePeers?.find(p => p.fix)?.fix;
     if (!map || !fix || !other) return;
     setFollowing(false);
-    const b = new maplibregl.LngLatBounds([fix.lng, fix.lat], [fix.lng, fix.lat]).extend([other.lng, other.lat]);
+    const b = new LngLatBounds([fix.lng, fix.lat], [fix.lng, fix.lat]).extend([other.lng, other.lat]);
     // 避開頂部卡（含實時分享 banner）同底欄：兩個人都要喺中間空位入面
     // 「我」名牌喺圓點上面、「對方」名牌喺圓點下面，所以上下都要多留一個名牌嘅高度
     const top = (document.querySelector('.top')?.getBoundingClientRect().bottom ?? 160) + 70;
@@ -391,8 +398,8 @@ function ensureBuildingLayers(map: MlMap) {
   if (map.getSource('bld')) return;
   map.addSource('bld', { type: 'vector', url: BUILDINGS_3D.tileJson, attribution: BUILDINGS_3D.attribution });
   map.addSource('here-building', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  const height: maplibregl.ExpressionSpecification = ['coalesce', ['get', 'render_height'], 10];
-  const base: maplibregl.ExpressionSpecification = ['coalesce', ['get', 'render_min_height'], 0];
+  const height: ExpressionSpecification = ['coalesce', ['get', 'render_height'], 10];
+  const base: ExpressionSpecification = ['coalesce', ['get', 'render_min_height'], 0];
   map.addLayer(
     {
       id: 'bld-3d', type: 'fill-extrusion', source: 'bld', 'source-layer': BUILDINGS_3D.sourceLayer, minzoom: 14,

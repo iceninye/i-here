@@ -144,7 +144,13 @@ body { background: var(--bg); overscroll-behavior: none; }
   padding: 4px 12px; border-radius: var(--r-pill); color: #fff; font-weight: 800; font-size: 1.1rem; line-height: 1.3;
   box-shadow: var(--shadow-sm); border: 2px solid #fff;
 }
-.pin__dot { width: 22px; height: 22px; margin-top: 4px; border-radius: 50%; border: 4px solid #fff; box-shadow: 0 0 0 0 currentColor; }
+.pin__dot { position: relative; width: 22px; height: 22px; margin-top: 4px; border-radius: 50%; border: 4px solid #fff; }
+/* 脈動圈：用偽元素做 transform + opacity 動畫（GPU 合成），唔再逐格改 box-shadow ——
+   舊做法每秒觸發 ~60 次樣式重算 / 重繪，實時分享期間白白耗電 */
+.pin__dot::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%; background: currentColor;
+  opacity: 0; pointer-events: none; will-change: transform, opacity; z-index: -1;
+}
 /* heading 箭咀（§4.4）：64px 盒嘅中心對正圓點中心（圓點中心 = 元素底邊以上 11px），
    所以旋轉係繞住實際座標轉。冇 heading / 靜止 / 訊號丟失時隱藏（未知 ≠ 向北）。 */
 /* 注意：唔好喺 .pin 加 position:relative —— 會蓋過 maplibre 嘅 .maplibregl-marker{position:absolute}，
@@ -158,29 +164,23 @@ body { background: var(--bg); overscroll-behavior: none; }
 .pin--heading .pin__arrow { opacity: 0.95; }
 .pin--me { color: #1a73e8; }
 .pin--me .pin__label, .pin--me .pin__dot { background: #1a73e8; }
-.pin--me .pin__dot { animation: pulse 2s infinite; }
+.pin--me .pin__dot::after { animation: pulse-ring 2s infinite ease-out; }
 .pin--shared { color: #d93025; }
 .pin--shared .pin__label, .pin--shared .pin__dot { background: #d93025; }
 /* 訊號丟失（§4.6）：pin 變灰、停止脈動 */
 .pin--me.pin--lost { color: #80868b; }
 .pin--me.pin--lost .pin__label, .pin--me.pin--lost .pin__dot { background: #80868b; }
-.pin--me.pin--lost .pin__dot { animation: none; }
+.pin--me.pin--lost .pin__dot::after { animation: none; }
 /* 實時分享嘅對方（§5.3）：橙色，同「我」嘅藍色分得開 */
 .pin--peer { color: #e8710a; }
 .pin--peer .pin__label, .pin--peer .pin__dot { background: #e8710a; }
-.pin--peer .pin__dot { animation: pulse-peer 2s infinite; }
+.pin--peer .pin__dot::after { animation: pulse-ring 2s infinite ease-out; }
 .pin--peer.pin--lost { color: #80868b; }
 .pin--peer.pin--lost .pin__label, .pin--peer.pin--lost .pin__dot { background: #80868b; }
-.pin--peer.pin--lost .pin__dot { animation: none; }
-@keyframes pulse-peer {
-  0% { box-shadow: 0 0 0 0 rgb(232 113 10 / 0.55); }
-  70% { box-shadow: 0 0 0 18px rgb(232 113 10 / 0); }
-  100% { box-shadow: 0 0 0 0 rgb(232 113 10 / 0); }
-}
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgb(26 115 232 / 0.55); }
-  70% { box-shadow: 0 0 0 18px rgb(26 115 232 / 0); }
-  100% { box-shadow: 0 0 0 0 rgb(26 115 232 / 0); }
+.pin--peer.pin--lost .pin__dot::after { animation: none; }
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.55; }
+  70%, 100% { transform: scale(2.6); opacity: 0; }
 }
 
 /* ---- 頂部位置卡 ---- */
@@ -290,7 +290,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 4px soli
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .pin--me .pin__dot, .pin--peer .pin__dot, .live__dot, .spinner { animation: none; }
+  .pin--me .pin__dot::after, .pin--peer .pin__dot::after, .live__dot, .spinner { animation: none; }
   .fab, .tool-btn, .share-btn { transition: none; }
 }
 /* 大屏（平板 / 桌面）：卡同按鈕唔好拉到成個闊度 */
@@ -365,8 +365,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 4px soli
 .live--compact { padding: 6px 10px; margin-bottom: 6px; }
 .live--compact .live__row { gap: 6px; flex-wrap: nowrap; }
 .live__who { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
-.live__toggle { flex: none; width: 36px; height: 36px; border: none; background: none; font: inherit; font-size: 1rem; color: var(--ink-2); cursor: pointer; }
-.live--compact .live__btn--stop { min-height: 36px; padding: 0 10px; font-size: var(--text-sm); }
+.live__toggle { flex: none; width: 28px; height: 36px; border: none; background: none; font: inherit; font-size: 1rem; color: var(--ink-2); cursor: pointer; }
+.live--compact .live__btn--stop { min-height: 36px; padding: 0 8px; gap: 4px; font-size: var(--text-sm); }
+.live--compact .live__state { padding: 1px 6px; }
+.live--compact .live__ttl { font-size: var(--text-xs); }
 .live__more { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
 .live__more .live__note { margin: 2px 0; font-size: var(--text-xs); }
 .live__more .live__invite { margin-top: 4px; padding-top: 0; border-top: none; }

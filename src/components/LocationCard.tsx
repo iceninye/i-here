@@ -44,11 +44,12 @@ export function LocationCard({ loc, compact = false }: { loc: CurrentLocation; c
   const headline = placeHeadline(place);
   const acc = fix ? accuracyLabel(fix.accuracy) : null;
 
-  if (compact && !open && fix && headline) {
+  if (compact && !open && fix) {
+    const ctitle = headline ?? (placeStatus === 'loading' || placeStatus === 'idle' ? '正在查詢地址…' : '已找到你的位置');
     return (
       <section className="card card--compact" aria-label="你的位置">
         <p className="sr-only" role="status" aria-live="polite">{announcement(loc, headline)}</p>
-        <p className="card__ctitle">{headline}</p>
+        <p className="card__ctitle">{ctitle}</p>
         {acc && (
           <p className={`badge badge--${acc.level}`}>
             <Icon name={acc.level === 'poor' ? 'alert' : 'signal'} /> {acc.short}

@@ -86,7 +86,6 @@ export function LiveShareBanner({ live, keepAwake = false, distanceText = null }
   return (
     <div className="live live--compact" role="status" aria-live="polite">
       <div className="live__row">
-        <Icon name="dot" className="icon--filled live__dot" />
         <span className="sr-only">正在分享實時位置</span>
         {status !== 'live'
           ? <span className="live__who">連線中…</span>
